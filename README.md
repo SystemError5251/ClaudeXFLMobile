@@ -101,6 +101,7 @@ MP3        [ ] also an MP3 preview
   removes your key.
 - **Earlier tracks** exports a composed track again, with the current
   Output setting.
+- **Update psygen** fetches the newest version (same as `psygen update`).
 - **q** or **Quit** leaves. Esc never quits from the main screen.
 
 Your choices are remembered in `~/.config/psygen/config.json` for next
@@ -248,6 +249,19 @@ the MIDI files are written.
 
 Stems are full length, so an 8-minute track is about 40 MB per stem at
 44.1 kHz / 16 bit. Use `--no-stems` if you only want the preview and MIDI.
+
+## Updating
+
+```sh
+psygen update            # git pull in the install folder, then restart psygen
+psygen update --check    # only show what's new
+```
+
+This updates the folder you cloned in the install step. pip only runs
+again when the dependencies changed. If you edited files in that folder,
+psygen won't overwrite them: keep them with `git stash` (or drop them with
+`git checkout .`) and run the update again. If psygen wasn't installed with
+`git clone`, the command explains how to reinstall it that way.
 
 ## Development
 

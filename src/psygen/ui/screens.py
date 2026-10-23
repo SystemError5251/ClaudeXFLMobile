@@ -147,6 +147,7 @@ class MainScreen(Screen):
             Button(f"Sample folders ({len(app.library)} samples)", "folders", "normal"),
             Button(f"API key: {key_text}", "apikey", "normal" if source else "warn"),
             Button(f"Earlier tracks ({self.track_count})", "tracks", "normal"),
+            Button("Update psygen", "update", "normal"),
             Button("Quit", "quit", "normal"),
             Static(),
             Static(f"Exports go to {app.cfg.resolved_export_dir()}", "dim"),
@@ -169,6 +170,8 @@ class MainScreen(Screen):
             app.push(ApiKeyScreen(app))
         elif action == "tracks":
             app.push(TracksScreen(app))
+        elif action == "update":
+            app.update()
         elif action == "quit":
             app.quit()
 
@@ -538,6 +541,24 @@ class Controller:
 
     def background(self, job: Job, done: Callable[[Job], None]) -> None:
         self.side_jobs.append((job.start(), done))
+
+    def update(self) -> Job:
+        from ..update import UpdateError, update
+
+        def work(report: tasks.Report):
+            try:
+                return update(report=report)
+            except UpdateError as exc:
+                raise ValueError(str(exc)) from exc
+
+        def done(result) -> list[tuple[str, str]]:
+            lines = [(result.message(), "ok" if result.updated else "normal")]
+            lines += [(f"  {c}", "dim") for c in result.commits[:20]]
+            if result.updated:
+                lines.append(("Choose Quit and start psygen again.", "warn"))
+            return lines
+
+        return self.run_job("Updating psygen", work, on_done=done)
 
     def generate(self, settings: Settings) -> Job | None:
         problems = settings.validate()

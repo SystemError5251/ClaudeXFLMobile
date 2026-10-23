@@ -222,6 +222,20 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_update(args: argparse.Namespace) -> int:
+    from .update import UpdateError, update
+
+    try:
+        result = update(check_only=args.check, report=lambda msg: print(msg, flush=True))
+    except UpdateError as exc:
+        print(f"Update failed: {exc}", file=sys.stderr)
+        return 1
+    for line in result.commits[:20]:
+        print(f"  {line}")
+    print(result.message())
+    return 0
+
+
 def _cmd_ui(args: argparse.Namespace) -> int:
     from .ui import run
 
@@ -273,6 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     dirs = sub.add_parser("dirs", help="show sample and output folders")
     dirs.set_defaults(func=_cmd_dirs)
+
+    upd = sub.add_parser("update", help="update psygen to the newest version (git pull)")
+    upd.add_argument("--check", action="store_true", help="only show whether an update is available")
+    upd.set_defaults(func=_cmd_update)
     return parser
 
 
