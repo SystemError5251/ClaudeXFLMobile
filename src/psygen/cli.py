@@ -1,4 +1,4 @@
-"""Command line entry point. The full Termux UI arrives in a later step."""
+"""Command line entry point. Without a command, psygen opens the terminal UI."""
 
 from __future__ import annotations
 
@@ -222,10 +222,19 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ui(args: argparse.Namespace) -> int:
+    from .ui import run
+
+    return run()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="psygen", description=__doc__)
     parser.add_argument("--version", action="version", version=f"psygen {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
+
+    ui = sub.add_parser("ui", help="terminal UI: pick genre and settings, generate and export (the default)")
+    ui.set_defaults(func=_cmd_ui)
 
     scan = sub.add_parser("scan", help="scan sample folders and build the library index")
     scan.add_argument("dirs", nargs="*", help="folders to scan (default: configured or auto-detected)")
@@ -269,6 +278,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command is None:
+        return _cmd_ui(args)
     return args.func(args)
 
 

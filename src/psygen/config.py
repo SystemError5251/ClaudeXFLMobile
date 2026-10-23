@@ -28,6 +28,38 @@ def config_path() -> Path:
     return config_dir() / "config.json"
 
 
+def api_key_path() -> Path:
+    """Claude API key saved from the UI (readable by the owner only)."""
+    return config_dir() / "api_key"
+
+
+def load_api_key() -> str | None:
+    try:
+        key = api_key_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return key or None
+
+
+def save_api_key(key: str) -> Path:
+    path = api_key_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Create with owner-only permissions before the key is written.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(key.strip() + "\n")
+    os.chmod(path, 0o600)
+    return path
+
+
+def delete_api_key() -> bool:
+    try:
+        api_key_path().unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def data_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
     return Path(base) / "psygen"
@@ -118,6 +150,7 @@ class Config:
     export_dir: str = ""  # empty: default_export_dir()
     export_sample_rate: int = 44100
     export_bits: int = 16
+    ui: dict = field(default_factory=dict)  # last choices in the terminal UI
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":

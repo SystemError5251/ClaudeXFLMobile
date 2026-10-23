@@ -6,8 +6,8 @@ API, does the musical decisions; psygen handles your samples, enforces the
 genre rules and exports MIDI per part plus WAV stems and a preview that you
 can load into FL Studio Mobile.
 
-> Status: step 3 of 4. The sample library, composing and MIDI/WAV export
-> are done; the full terminal UI comes next.
+All four steps of the plan are in: sample library, composing, MIDI/WAV
+export and the terminal UI. Type `psygen` and go.
 
 ## Install on Termux
 
@@ -26,12 +26,22 @@ pip install -e .
 pip install soundfile        # optional, see below
 ```
 
-Then set your Claude API key (from the [Claude Console](https://platform.claude.com/)):
+Then start it:
+
+```sh
+psygen
+```
+
+You need a Claude API key from the [Claude Console](https://platform.claude.com/).
+Paste it in the UI under **API key** (it is saved to
+`~/.config/psygen/api_key`, readable only by you), or set it in your shell:
 
 ```sh
 echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
 source ~/.bashrc
 ```
+
+The environment variable wins when both are set.
 
 Notes:
 
@@ -48,6 +58,57 @@ Notes:
 - Without numpy, `psygen` still works but sorts samples by name only.
 
 On a desktop (for development) a normal `pip install -e ".[dev]"` works.
+
+## The terminal UI
+
+`psygen` (or `psygen ui`) opens a full-screen menu that works with the
+Termux keyboard and touch:
+
+```
+ psygen | New track
+Genre      < psytrance >
+BPM        auto
+Key        < auto >
+Scale      < auto >
+Length     auto (minutes)
+Idea       sunrise on the beach, twisted 303
+Composer   < Claude, high effort >
+Output     < MIDI + stems + preview >
+MP3        [ ] also an MP3 preview
+[ Generate and export ]
+
+[ Sample folders (1234 samples) ]
+[ API key: saved ]
+[ Earlier tracks (3) ]
+[ Quit ]
+```
+
+- **Arrows** move (Termux shows arrow keys in its extra-keys row),
+  **left/right** change a choice, **enter** acts. You can also **tap** a
+  line to select it and tap it again to use it.
+- Text fields (BPM, Length, Idea) take typing directly while selected.
+  Leave BPM, Key, Scale and Length on `auto` and Claude decides.
+- **Generate and export** does the whole run: scans your samples first if
+  the library is still empty, lets Claude compose (or builds the offline
+  template), saves the track, and exports MIDI, stems and the preview. The
+  progress screen shows each step and, at the end, the folder the files
+  went to. **Esc** cancels after the current step (a Claude request that is
+  already running finishes in the background and is ignored).
+- **Sample folders** lists the scanned folders, adds a folder by path
+  (`~` works), removes one, and rescans, optionally letting Claude sort the
+  samples that names don't explain.
+- **API key** saves, tests (lists one model, which costs nothing) or
+  removes your key.
+- **Earlier tracks** exports a composed track again, with the current
+  Output setting.
+- **q** or **Quit** leaves. Esc never quits from the main screen.
+
+Your choices are remembered in `~/.config/psygen/config.json` for next
+time. The UI uses Python's built-in `curses`, so it needs nothing extra to
+install. If something unexpected breaks, the details are in
+`~/.cache/psygen/ui-error.log`.
+
+All of it also works as plain commands, described below, for scripts.
 
 ## Sample library
 

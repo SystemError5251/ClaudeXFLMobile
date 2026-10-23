@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
-from . import __version__
+from . import __version__, config
 from .samples.categorize import Category
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -94,6 +94,7 @@ class HttpClient:
         self.auth_token = auth_token
         base = os.environ.get("ANTHROPIC_BASE_URL")
         self.url = url or (base.rstrip("/") + "/v1/messages" if base else API_URL)
+        self.models_url = self.url.rsplit("/", 1)[0] + "/models"
         self.timeout = timeout
         self.retries = retries
 
@@ -142,11 +143,35 @@ class HttpClient:
         raise ClaudeError("could not reach the Claude API")  # pragma: no cover
 
 
+    def check(self) -> None:
+        """Make a free request (list one model) to see whether the key works."""
+        request = urllib.request.Request(
+            self.models_url + "?limit=1", headers=self._headers([]), method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response.read()
+        except urllib.error.HTTPError as exc:
+            raise ClaudeError(_error_message(exc.code, exc.read())) from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            raise ClaudeError("could not reach the Claude API (no internet?)") from exc
+
+
+def key_source() -> str | None:
+    """Where the credentials come from: "env", "saved" or None."""
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+        return "env"
+    return "saved" if config.load_api_key() else None
+
+
 def make_client() -> HttpClient:
+    """Credentials from ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN, else the key
+    saved in the terminal UI."""
     key = os.environ.get("ANTHROPIC_API_KEY")
     token = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     if not key and not token:
-        raise ClaudeError("no Claude API key: set ANTHROPIC_API_KEY (see README)")
+        key = config.load_api_key()
+    if not key and not token:
+        raise ClaudeError("no Claude API key: set ANTHROPIC_API_KEY or save one in `psygen ui` (see README)")
     return HttpClient(api_key=key, auth_token=token)
 
 
