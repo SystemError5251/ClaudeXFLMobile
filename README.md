@@ -222,11 +222,13 @@ forest-gate/
   track.json                the track itself, to export again later
 ```
 
-Where it goes (`psygen dirs` shows it): `FLM User Files/My Samples/psygen/`
-when Termux can write to FL Studio Mobile's user folder (or the older
-`FL Studio Mobile/My Samples/psygen/`), so the stems show up in its sample
-browser; otherwise `Music/psygen/` in shared storage, which you can
-open from FL Studio Mobile's file browser. Set `export_dir` in
+Where it goes (`psygen dirs` shows it): always
+`FLM User Files/My Samples/psygen/` in internal storage, created if needed,
+so every track lands in one fixed place that FL Studio Mobile's sample
+browser shows. (If your `FLM User Files` lives under
+`Android/data/com.imageline.FLM/files/` and Termux can write there, that
+one is used.) Without `termux-setup-storage` psygen can't reach shared
+storage and writes to `~/.local/share/psygen/exports` instead. Set `export_dir` in
 `~/.config/psygen/config.json` (or pass `--dest`) to use another folder.
 `export_sample_rate` (44100) and `export_bits` (16) are there too. psygen
 never scans its own export folders as samples.

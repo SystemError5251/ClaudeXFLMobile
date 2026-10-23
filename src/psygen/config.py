@@ -139,17 +139,24 @@ def flm_output_dir() -> Path | None:
 def default_export_dir() -> Path:
     """Where exports go unless ``export_dir`` is set.
 
-    FL Studio Mobile's own folder when Termux can reach it (``My Samples``
-    shows up in its sample browser), else ``Music/psygen`` in shared storage
-    (importable from FL Studio Mobile's file browser), else a local folder.
+    Always ``FLM User Files/My Samples/psygen``, so there is one fixed place
+    to pick tracks up in FL Studio Mobile's sample browser: an existing
+    ``FLM User Files`` folder Termux can write to, otherwise one created in
+    shared storage. Without shared storage (no ``termux-setup-storage``) a
+    local folder is used.
     """
-    flm = flm_output_dir()
-    if flm is not None:
-        return flm / "My Samples" / "psygen"
+    for sub in FLM_USER_DIRS[:2]:  # the "FLM User Files" locations
+        for root in SHARED_STORAGE_ROOTS:
+            candidate = root / sub
+            try:
+                if candidate.is_dir() and os.access(candidate, os.W_OK):
+                    return candidate / "My Samples" / "psygen"
+            except OSError:
+                continue
     for root in SHARED_STORAGE_ROOTS:
         try:
             if root.is_dir() and os.access(root, os.W_OK):
-                return root / "Music" / "psygen"
+                return root / "FLM User Files" / "My Samples" / "psygen"
         except OSError:
             continue
     return data_dir() / "exports"
