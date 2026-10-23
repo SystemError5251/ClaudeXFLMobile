@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__, ai, config
 from .samples import Category, SampleLibrary
 from .samples.audio_io import numpy_available
 
@@ -41,6 +41,17 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     if sys.stdout.isatty():
         print()
     lib.save(config.index_path())
+    if args.ai:
+        weak = [s for s in lib if s.source in ("none", "audio")]
+        if weak:
+            print(f"Asking Claude about {len(weak)} unclear samples...")
+            try:
+                changed = ai.classify_samples(weak, model=cfg.claude_model)
+            except ai.ClaudeError as exc:
+                print(f"Claude step skipped: {exc}", file=sys.stderr)
+            else:
+                print(f"Claude categorized {changed} samples")
+                lib.save(config.index_path())
     _print_counts(lib)
     return 0
 
@@ -73,7 +84,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
                 f"{s.duration:.2f}s" if s.duration else "",
             ) if x
         )
-        print(f"{s.category.value:<11} {s.confidence:.2f} {s.source:<5} {s.path}  {extra}")
+        print(f"{s.category.value:<11} {s.confidence:.2f} {s.source:<6} {s.path}  {extra}")
     return 0
 
 
@@ -97,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("dirs", nargs="*", help="folders to scan (default: configured or auto-detected)")
     scan.add_argument("--add", action="store_true", help="remember the given folders")
     scan.add_argument("--no-analysis", action="store_true", help="categorize by name only")
+    scan.add_argument("--ai", action="store_true", help="ask Claude to categorize samples the name doesn't explain")
     scan.set_defaults(func=_cmd_scan)
 
     lst = sub.add_parser("list", help="show library contents")

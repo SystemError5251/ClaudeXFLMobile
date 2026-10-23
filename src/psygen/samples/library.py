@@ -26,7 +26,7 @@ class Sample:
     path: str
     category: Category
     confidence: float
-    source: str  # "name", "audio" or "none"
+    source: str  # "name", "audio", "claude" or "none"
     is_loop: bool = False
     bpm: float | None = None
     key: str | None = None

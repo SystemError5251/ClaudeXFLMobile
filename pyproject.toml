@@ -8,8 +8,11 @@ version = "0.1.0"
 description = "Automated psytrance / goa / progressive track generator for Termux, exporting MIDI and WAV for FL Studio Mobile"
 readme = "README.md"
 requires-python = ">=3.10"
-# Core stays pure Python so `pip install .` never needs a compiler on Android.
+# Everything except `anthropic` is pure Python. anthropic pulls in
+# pydantic-core and jiter, which need a Rust toolchain on Termux if pip
+# finds no prebuilt wheel (see README).
 dependencies = [
+    "anthropic>=2.1",
     "mido>=1.3",
 ]
 

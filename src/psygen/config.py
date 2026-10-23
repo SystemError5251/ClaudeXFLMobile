@@ -84,6 +84,7 @@ def flm_output_dir() -> Path | None:
 class Config:
     sample_dirs: list[str] = field(default_factory=list)
     analyze_audio: bool = True
+    claude_model: str = "claude-opus-5-5"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":

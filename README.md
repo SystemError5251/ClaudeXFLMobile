@@ -1,9 +1,10 @@
 # ClaudeXFLMobile
 
 `psygen` is an automated psytrance / goa / progressive track generator that
-runs in [Termux](https://termux.dev) on Android. It builds tracks from your own
-samples and exports MIDI per part plus WAV stems and a preview that you can
-load into FL Studio Mobile.
+runs in [Termux](https://termux.dev) on Android. Claude, through the Claude
+API, does the musical decisions; psygen handles your samples, enforces the
+genre rules and exports MIDI per part plus WAV stems and a preview that you
+can load into FL Studio Mobile.
 
 > Status: step 1 of 4. The sample library is done; genre engines,
 > arrangement, export and the full terminal UI come next.
@@ -14,7 +15,7 @@ Install Termux from F-Droid or GitHub (the Play Store build is outdated), then:
 
 ```sh
 pkg update && pkg upgrade
-pkg install python git python-numpy ffmpeg libsndfile
+pkg install python git python-numpy ffmpeg libsndfile rust binutils
 
 # Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
 termux-setup-storage
@@ -25,8 +26,19 @@ pip install -e .
 pip install soundfile        # optional, see below
 ```
 
+Then set your Claude API key (from the [Claude Console](https://platform.claude.com/)):
+
+```sh
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
+source ~/.bashrc
+```
+
 Notes:
 
+- **anthropic** (the Claude SDK) depends on `pydantic-core` and `jiter`,
+  which are written in Rust. If pip finds no prebuilt wheel for your phone it
+  compiles them, which is why `rust` and `binutils` are in the `pkg` line.
+  That first install can take a while; later ones are quick.
 - **numpy**: install it with `pkg install python-numpy`, not pip. Building it
   from source on a phone takes ages and often fails.
 - **soundfile** (optional) reads FLAC/OGG/AIFF quickly via libsndfile. Without
@@ -55,6 +67,7 @@ folders above instead.
 psygen dirs                          # show which folders will be scanned
 psygen scan                          # scan auto-detected folders
 psygen scan ~/storage/shared/MySamples --add   # scan and remember a folder
+psygen scan --ai                     # also let Claude sort samples the names don't explain
 psygen list                          # counts per category
 psygen list -c kick                  # list all kicks
 psygen list -s goa                   # search paths
@@ -77,6 +90,13 @@ Categories: `kick`, `snare`, `clap`, `hat_closed`, `hat_open`, `cymbal`,
    the first few seconds (spectrum balance, brightness, pitch, envelope,
    transient count) makes a modest guess and detects loops. These matches
    are marked `audio` with a lower confidence in `psygen list`.
+3. **Claude for the rest (optional).** `psygen scan --ai` sends the paths and
+   measured features (never the audio) of samples that steps 1 and 2 could
+   not place confidently to Claude, in batches of 150. These are marked
+   `claude`, and samples Claude already sorted are not sent again.
+
+The model defaults to `claude-opus-5-5`; change `claude_model` in
+`~/.config/psygen/config.json` to use another.
 
 ## Development
 
