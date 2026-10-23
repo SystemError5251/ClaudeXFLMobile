@@ -193,6 +193,7 @@ class Config:
     export_sample_rate: int = 44100
     export_bits: int = 16
     ui: dict = field(default_factory=dict)  # last choices in the terminal UI
+    open_flm_after_export: bool = True  # Termux: bring FL Studio Mobile up when a track is ready
     storage_setup_done: bool = False  # termux-setup-storage ran on the first start
 
     @classmethod

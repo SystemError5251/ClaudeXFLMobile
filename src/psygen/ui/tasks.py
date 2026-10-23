@@ -88,6 +88,24 @@ class Settings:
             seed=seed,
         )
 
+    def cli_args(self) -> list[str]:
+        """The same run as a `psygen compose` command line (for background runs)."""
+        args = ["compose", "-g", self.genre]
+        for flag, value in (("--bpm", self.bpm), ("--key", self.key), ("--scale", self.scale),
+                            ("--minutes", self.minutes), ("--idea", self.idea)):
+            if value.strip():
+                args += [flag, value.strip().replace(",", ".") if flag in ("--bpm", "--minutes") else value.strip()]
+        if self.offline:
+            args.append("--offline")
+        args.append("--export")
+        if self.output == "preview":
+            args.append("--no-stems")
+        elif self.output == "midi":
+            args.append("--midi-only")
+        if self.mp3 and self.output != "midi":
+            args.append("--mp3")
+        return args
+
     def export_options(self, cfg: config.Config) -> ExportOptions:
         return ExportOptions(
             sample_rate=cfg.export_sample_rate,

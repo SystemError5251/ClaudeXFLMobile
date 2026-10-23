@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
-from . import __version__, ai, config
+from . import __version__, ai, android, config
 from .compose import GENRES, ComposeRequest, Track, compose, skeleton
 from .compose.theory import SCALES
 from .export import ExportOptions, export_track, slugify
@@ -119,6 +120,29 @@ def print_track(track: Track) -> None:
 
 
 def _cmd_compose(args: argparse.Namespace) -> int:
+    if args.background:
+        argv = [a for a in args.argv if a != "--background"]
+        argv += [a for a in ("--export", "--notify") if a not in argv]
+        log = android.start_background(argv)
+        print(f"Running in the background. FL Studio Mobile opens when the track is ready.\nLog: {log}")
+        return 0
+    in_background = os.environ.get("PSYGEN_BACKGROUND") == "1"
+    if in_background:
+        android.wake_lock(True)
+    try:
+        code = _compose(args)
+    finally:
+        if in_background:
+            android.wake_lock(False)
+    if args.notify:
+        if code == 0:
+            android.notify("psygen: track ready", "It's in FLM User Files/My Samples/psygen.")
+        else:
+            android.notify("psygen: generating failed", f"Details in {android.background_log()}")
+    return code
+
+
+def _compose(args: argparse.Namespace) -> int:
     cfg = config.Config.load()
     request = ComposeRequest(
         genre=args.genre, idea=args.idea or "", bpm=args.bpm, key=args.key,
@@ -177,6 +201,8 @@ def _export(track: Track, cfg: config.Config, lib: SampleLibrary, args: argparse
     for warning in result.warnings:
         print(f"  ! {warning}")
     print(f"Done: {result.folder}")
+    if getattr(args, "open_flm", None) is not False and cfg.open_flm_after_export and android.open_flm():
+        print("  Opened FL Studio Mobile")
     print(f"  {result.full_midi.name} and {len(result.part_midi)} part MIDI files in midi/")
     if result.stems:
         print(f"  {len(result.stems)} WAV stems in stems/")
@@ -208,6 +234,8 @@ def _add_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mp3", action="store_true", help="also write the preview as MP3 (needs ffmpeg)")
     p.add_argument("--sample-rate", type=int, choices=(22050, 44100, 48000))
     p.add_argument("--bits", type=int, choices=(16, 24))
+    p.add_argument("--no-open-flm", dest="open_flm", action="store_false", default=None,
+                   help="don't open FL Studio Mobile after exporting")
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
@@ -271,6 +299,9 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--offline", action="store_true", help="template track without Claude")
     comp.add_argument("-o", "--out", help="output JSON path")
     comp.add_argument("--export", action="store_true", help="export MIDI and WAV right after composing")
+    comp.add_argument("--background", action="store_true",
+                      help="compose and export in the background, then open FL Studio Mobile (Termux)")
+    comp.add_argument("--notify", action="store_true", help="Android notification when done (Termux:API)")
     _add_export_args(comp)
     comp.set_defaults(func=_cmd_compose)
 
@@ -294,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    args.argv = list(sys.argv[1:] if argv is None else argv)
     if args.command is None:
         return _cmd_ui(args)
     return args.func(args)

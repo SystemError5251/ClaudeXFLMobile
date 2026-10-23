@@ -14,7 +14,7 @@ export and the terminal UI. Type `psygen` and go.
 Get Termux from F-Droid (not the Play Store). Paste this in one go:
 
 ```sh
-pkg update -y && pkg install -y python git python-numpy ffmpeg nodejs && \
+pkg update -y && pkg install -y python git python-numpy ffmpeg nodejs termux-api && \
 git clone https://github.com/SystemError5251/ClaudeXFLMobile.git ~/ClaudeXFLMobile && \
 pip install -e ~/ClaudeXFLMobile && \
 npm install -g @anthropic-ai/claude-code && \
@@ -32,6 +32,13 @@ On the first start psygen asks for storage access: tap Allow.
 With both, psygen uses the key and switches to Claude Code when the credits
 run out. **Update** later with `psygen update`.
 
+**Straight into FL Studio Mobile:** when a track is ready, psygen opens FL
+Studio Mobile; the track is in its sample browser under `My Samples/psygen`.
+**Generate in background** (or `psygen compose --background`) lets you
+leave Termux right away: it keeps running, shows a notification when done
+(needs the [Termux:API](https://f-droid.org/packages/com.termux.api/) app)
+and then opens FL Studio Mobile.
+
 <details>
 <summary>Details</summary>
 
@@ -45,6 +52,10 @@ run out. **Update** later with `psygen update`.
   answers. A Termux build of it works too; if its command isn't `claude`,
   set `claude_cli` in `~/.config/psygen/config.json`.
 - `claude_backend` in that config: `auto` (default), `api` or `claude-code`.
+- `open_flm_after_export: false` (or `--no-open-flm`) stops psygen from
+  opening FL Studio Mobile. FL Studio Mobile can't load a track into an open
+  project from outside, so pick the stems or MIDI from its browser. The
+  background run's log is `~/.cache/psygen/background.log`.
 - Desktop/development: `pip install -e ".[dev]"`.
 
 </details>

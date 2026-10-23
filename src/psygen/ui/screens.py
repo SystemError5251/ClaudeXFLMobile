@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .. import ai, config
+from .. import ai, android, config
 from ..compose import GENRES, Track
 from ..compose.theory import NOTE_NAMES, SCALES
 from ..samples import SampleLibrary
@@ -148,6 +148,7 @@ class MainScreen(Screen):
             self.genre, self.bpm, self.key, self.scale, self.minutes, self.idea,
             self.composer, self.output, self.mp3,
             Button("Generate and export", "generate", "button"),
+            Button("Generate in background", "background", "normal"),
             Static(),
             Button(f"Sample folders ({len(app.library)} samples)", "folders", "normal"),
             Button(f"API key: {key_text}", "apikey", "normal" if source else "warn"),
@@ -169,6 +170,8 @@ class MainScreen(Screen):
         app = self.app
         if action == "generate":
             app.generate(self.collect())
+        elif action == "background":
+            app.generate_in_background(self.collect())
         elif action == "folders":
             app.push(FoldersScreen(app))
         elif action == "apikey":
@@ -571,22 +574,42 @@ class Controller:
 
         return self.run_job("Updating psygen", work, on_done=done)
 
-    def generate(self, settings: Settings) -> Job | None:
+    def _ready(self, settings: Settings) -> bool:
         problems = settings.validate()
         if problems:
             self.say(problems[0], "error")
-            return None
+            return False
         if not settings.offline and self.client is None and not ai.can_reach_claude(self.cfg):
             self.say("No API key and no Claude Code. Open API key, or set Composer to offline template.", "error")
-            return None
+            return False
         self.settings = settings
         settings.remember(self.cfg)
         self.save_config()
+        return True
+
+    def generate_in_background(self, settings: Settings) -> bool:
+        if not self._ready(settings):
+            return False
+        try:
+            android.start_background(settings.cli_args())
+        except OSError as exc:
+            self.say(f"Could not start the background run: {exc}", "error")
+            return False
+        self.say("Generating in the background. FL Studio Mobile opens when the track is ready; "
+                 "you can leave psygen now.", "ok")
+        return True
+
+    def generate(self, settings: Settings) -> Job | None:
+        if not self._ready(settings):
+            return None
 
         def done(outcome: tasks.Outcome) -> list[tuple[str, str]]:
             if outcome.library is not None:
                 self.library = outcome.library
-            return tasks.summary(outcome)
+            lines = tasks.summary(outcome)
+            if self.cfg.open_flm_after_export and android.open_flm():
+                lines.append(("Opened FL Studio Mobile: the track is in My Samples/psygen.", "ok"))
+            return lines
 
         return self.run_job(
             "Generating",
