@@ -138,7 +138,12 @@ class MainScreen(Screen):
     def items(self) -> list[Field]:
         app = self.app
         source = ai.key_source()
-        key_text = {"env": "set (environment)", "saved": "saved"}.get(source or "", "missing")
+        cli = ai.claude_code_path(app.cfg)
+        key_text = {"env": "set (environment)", "saved": "saved"}.get(source or "", "")
+        if cli:
+            key_text = f"{key_text} + Claude Code" if key_text else "none, using Claude Code"
+        source = source or cli
+        key_text = key_text or "missing"
         return [
             self.genre, self.bpm, self.key, self.scale, self.minutes, self.idea,
             self.composer, self.output, self.mp3,
@@ -252,8 +257,8 @@ class FoldersScreen(Screen):
             app.say(f"Added {path}. Choose Scan now." if added else f"{path} is already in the list.", "ok")
         elif action == "scan":
             use_claude = self.use_claude.value
-            if use_claude and not ai.key_source():
-                app.say("Claude sorting needs an API key (see API key).", "error")
+            if use_claude and not ai.can_reach_claude(cfg):
+                app.say("Claude sorting needs an API key or Claude Code (see API key).", "error")
                 return
             app.run_job(
                 "Scanning samples",
@@ -289,7 +294,15 @@ class ApiKeyScreen(Screen):
         else:
             status = Static("No key yet. Create one at platform.claude.com under API keys "
                             "and paste it here (long-press, Paste).", "warn")
-        items: list[Field] = [status, Static(), self.new, Button("Save key", "save")]
+        cli = ai.claude_code_path(self.app.cfg)
+        if cli:
+            backup = Static(f"Claude Code found ({cli}). psygen uses it when there is no key or "
+                            "the API has no credits left. Log in once by running claude.", "ok")
+        else:
+            backup = Static("Optional backup: install Claude Code (pkg install nodejs, then npm install "
+                            "-g @anthropic-ai/claude-code) to compose with your Claude account when "
+                            "the API has no credits.", "dim")
+        items: list[Field] = [status, backup, Static(), self.new, Button("Save key", "save")]
         if source:
             items.append(Button("Test key", "test", "normal"))
         if config.load_api_key():
@@ -322,7 +335,7 @@ class ApiKeyScreen(Screen):
             app.say("Key saved." + note + " Choose Test key to check it.", "ok" if not note else "warn")
         elif action == "test":
             app.say("Testing the key...", "dim")
-            app.background(Job("key test", lambda report: ai.make_client().check()), self._tested)
+            app.background(Job("key test", lambda report: ai.api_client().check()), self._tested)
         elif action == "remove":
             config.delete_api_key()
             app.say("Saved key removed.", "ok")
@@ -563,8 +576,8 @@ class Controller:
         if problems:
             self.say(problems[0], "error")
             return None
-        if not settings.offline and self.client is None and not ai.key_source():
-            self.say("No Claude API key. Open API key, or set Composer to offline template.", "error")
+        if not settings.offline and self.client is None and not ai.can_reach_claude(self.cfg):
+            self.say("No API key and no Claude Code. Open API key, or set Composer to offline template.", "error")
             return None
         self.settings = settings
         settings.remember(self.cfg)

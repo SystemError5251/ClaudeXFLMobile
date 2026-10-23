@@ -44,6 +44,33 @@ source ~/.bashrc
 
 The environment variable wins when both are set.
 
+### Claude Code as a backup (no API credits needed)
+
+If you have no API key, or your API account runs out of credits, psygen
+uses [Claude Code](https://claude.com/claude-code) instead, which runs on
+the Claude account you log in with. Install it in Termux and log in once:
+
+```sh
+pkg install nodejs
+npm install -g @anthropic-ai/claude-code
+claude          # log in once, then /exit
+```
+
+A Termux build of Claude Code works too, as long as the `claude` command is
+on your PATH (or set `claude_cli` in `~/.config/psygen/config.json` to its
+command or path). psygen runs it with all tools switched off
+(`claude -p --tools ""`), so Claude Code only answers; it never runs commands
+on your phone.
+
+Which way psygen uses is set by `claude_backend` in the config:
+
+- `auto` (default): the API with your key. When the API says the credits are
+  used up (or rejects the key), psygen switches to Claude Code. Without a
+  key it uses Claude Code right away.
+- `api`: only the API. `claude-code`: only Claude Code.
+
+The progress screen tells you when Claude Code takes over.
+
 Notes:
 
 - psygen talks to the Claude API with Python's standard library and needs
@@ -99,7 +126,7 @@ MP3        [ ] also an MP3 preview
   (`~` works), removes one, and rescans, optionally letting Claude sort the
   samples that names don't explain.
 - **API key** saves, tests (lists one model, which costs nothing) or
-  removes your key.
+  removes your key, and shows whether Claude Code is there as a backup.
 - **Earlier tracks** exports a composed track again, with the current
   Output setting.
 - **Update psygen** fetches the newest version (same as `psygen update`).

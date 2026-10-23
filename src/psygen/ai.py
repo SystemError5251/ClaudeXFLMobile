@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import os
 import random
+import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -38,6 +40,17 @@ RETRY_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
 class ClaudeError(Exception):
     """Claude could not be reached or did not return a usable answer."""
 
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
+
+    @property
+    def api_unusable(self) -> bool:
+        """The API itself refuses (no credits, bad key): another way to reach
+        Claude, such as Claude Code, may still work."""
+        text = str(self).lower()
+        return self.status in (401, 402, 403) or (self.status == 400 and "credit" in text)
+
 
 def _error_message(status: int, body: bytes) -> str:
     try:
@@ -46,6 +59,8 @@ def _error_message(status: int, body: bytes) -> str:
         detail = body.decode("utf-8", "replace").strip()[:200] or "no details"
     if status == 401:
         return "the Claude API key was rejected (check ANTHROPIC_API_KEY)"
+    if status in (400, 402) and "credit" in detail.lower():
+        return "the Claude API account has no credits left (top up at platform.claude.com)"
     if status == 429:
         return "Claude API rate limit reached, try again shortly"
     if status == 529:
@@ -127,7 +142,7 @@ class HttpClient:
             except urllib.error.HTTPError as exc:
                 message = _error_message(exc.code, exc.read())
                 if exc.code not in RETRY_STATUS or attempt == self.retries:
-                    raise ClaudeError(message) from exc
+                    raise ClaudeError(message, status=exc.code) from exc
                 wait = exc.headers.get("retry-after") if exc.headers else None
             except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
                 if attempt == self.retries:
@@ -157,13 +172,13 @@ class HttpClient:
 
 
 def key_source() -> str | None:
-    """Where the credentials come from: "env", "saved" or None."""
+    """Where the API credentials come from: "env", "saved" or None."""
     if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
         return "env"
     return "saved" if config.load_api_key() else None
 
 
-def make_client() -> HttpClient:
+def api_client() -> HttpClient:
     """Credentials from ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN, else the key
     saved in the terminal UI."""
     key = os.environ.get("ANTHROPIC_API_KEY")
@@ -173,6 +188,144 @@ def make_client() -> HttpClient:
     if not key and not token:
         raise ClaudeError("no Claude API key: set ANTHROPIC_API_KEY or save one in `psygen ui` (see README)")
     return HttpClient(api_key=key, auth_token=token)
+
+
+# -- Claude Code as a second way in -------------------------------------------
+
+
+def claude_code_path(cfg: "config.Config | None" = None) -> str | None:
+    """The Claude Code command (``claude``) if it is installed."""
+    cfg = cfg or config.Config.load()
+    return shutil.which(cfg.claude_cli or "claude")
+
+
+class CliClient:
+    """Runs one request through Claude Code (``claude -p``), which uses the
+    account Claude Code is logged in with instead of API credits. Same
+    ``send`` interface as :class:`HttpClient`."""
+
+    def __init__(self, command: str, timeout: float = 1200, cwd: Path | None = None):
+        self.command = command
+        self.timeout = timeout
+        self.cwd = cwd
+
+    def _args(self, body: dict, extras: bool) -> list[str]:
+        args = [self.command, "-p", "--output-format", "json", "--no-session-persistence",
+                "--tools", "", "--model", body.get("model", DEFAULT_MODEL)]
+        if body.get("system"):
+            args += ["--system-prompt", body["system"]]
+        output = body.get("output_config", {})
+        if extras:  # options older Claude Code builds may not know
+            schema = output.get("format", {}).get("schema")
+            if schema is not None:
+                args += ["--json-schema", json.dumps(schema)]
+            if output.get("effort"):
+                args += ["--effort", output["effort"]]
+        return args
+
+    def _prompt(self, body: dict, extras: bool) -> str:
+        prompt = "\n\n".join(m["content"] for m in body.get("messages", []) if m.get("role") == "user")
+        if not extras:
+            schema = body.get("output_config", {}).get("format", {}).get("schema")
+            prompt += ("\n\nAnswer with one JSON object only, no other text, matching this JSON schema:\n"
+                       + json.dumps(schema))
+        return prompt
+
+    def _run(self, body: dict, extras: bool) -> subprocess.CompletedProcess:
+        cwd = self.cwd or config.cache_dir()
+        cwd.mkdir(parents=True, exist_ok=True)
+        try:
+            return subprocess.run(
+                self._args(body, extras), input=self._prompt(body, extras),
+                capture_output=True, text=True, timeout=self.timeout, cwd=str(cwd),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise ClaudeError("Claude Code took too long to answer") from exc
+        except OSError as exc:
+            raise ClaudeError(f"could not start Claude Code ({self.command}): {exc}") from exc
+
+    def send(self, body: dict, *, stream: bool = False, betas: Iterable[str] = ()) -> dict:
+        proc = self._run(body, extras=True)
+        if proc.returncode != 0 and "unknown option" in (proc.stderr or "").lower():
+            proc = self._run(body, extras=False)  # an older Claude Code
+        try:
+            reply = json.loads(proc.stdout)
+        except ValueError:
+            detail = (proc.stderr or proc.stdout).strip().splitlines()
+            raise ClaudeError(f"Claude Code failed: {detail[-1] if detail else 'no output'}") from None
+        if reply.get("is_error"):
+            text = str(reply.get("result") or reply.get("subtype") or "unknown error")
+            if "login" in text.lower() or "api key" in text.lower():
+                raise ClaudeError("Claude Code isn't logged in: run `claude` once and log in")
+            raise ClaudeError(f"Claude Code: {text[:200]}")
+        answer = reply.get("structured_output")
+        text = json.dumps(answer) if answer is not None else _strip_fences(str(reply.get("result", "")))
+        return {"stop_reason": "end_turn", "content": [{"type": "text", "text": text}]}
+
+
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    return text.strip()
+
+
+class FallbackClient:
+    """The API first; Claude Code when the API refuses (no credits, bad key)."""
+
+    def __init__(self, primary: HttpClient, fallback: CliClient, notice=None):
+        self.primary = primary
+        self.fallback = fallback
+        self.notice = notice or (lambda _msg: None)
+        self.use_fallback = False
+
+    def send(self, body: dict, *, stream: bool = False, betas: Iterable[str] = ()) -> dict:
+        if not self.use_fallback:
+            try:
+                return self.primary.send(body, stream=stream, betas=betas)
+            except ClaudeError as exc:
+                if not exc.api_unusable:
+                    raise
+                self.notice(f"{exc}; using Claude Code instead")
+                self.use_fallback = True
+        return self.fallback.send(body, stream=stream, betas=betas)
+
+
+def make_client(notice=None, cfg: "config.Config | None" = None):
+    """The way to reach Claude, by config ``claude_backend``:
+
+    - ``auto`` (default): the API with your key, falling back to Claude Code
+      when the API has no credits or rejects the key; Claude Code alone when
+      there is no key.
+    - ``api``: only the API. ``claude-code``: only Claude Code.
+    """
+    cfg = cfg or config.Config.load()
+    backend = cfg.claude_backend
+    cli = claude_code_path(cfg)
+    if backend == "api":
+        return api_client()
+    if backend in ("claude-code", "cli"):
+        if not cli:
+            raise ClaudeError("Claude Code is not installed (see README: npm install -g @anthropic-ai/claude-code)")
+        return CliClient(cli)
+    if key_source():
+        return FallbackClient(api_client(), CliClient(cli), notice) if cli else api_client()
+    if cli:
+        return CliClient(cli)
+    raise ClaudeError(
+        "no way to reach Claude: save an API key in `psygen ui` (or set ANTHROPIC_API_KEY), "
+        "or install and log in to Claude Code (see README)"
+    )
+
+
+def can_reach_claude(cfg: "config.Config | None" = None) -> bool:
+    cfg = cfg or config.Config.load()
+    if cfg.claude_backend == "api":
+        return key_source() is not None
+    if cfg.claude_backend in ("claude-code", "cli"):
+        return claude_code_path(cfg) is not None
+    return key_source() is not None or claude_code_path(cfg) is not None
 
 
 def ask_json(

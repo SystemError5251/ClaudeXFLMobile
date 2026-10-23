@@ -132,7 +132,8 @@ def _cmd_compose(args: argparse.Namespace) -> int:
     else:
         print(f"Claude is composing a {request.profile().name} track...")
         try:
-            result = compose(request, lib, model=cfg.claude_model, effort=cfg.compose_effort)
+            client = ai.make_client(notice=lambda msg: print(f"  {msg}"), cfg=cfg)
+            result = compose(request, lib, client=client, model=cfg.claude_model, effort=cfg.compose_effort)
         except ai.ClaudeError as exc:
             print(f"Composing failed: {exc}\nUse --offline for a template track.", file=sys.stderr)
             return 1

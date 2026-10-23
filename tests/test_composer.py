@@ -154,7 +154,8 @@ def test_cli_compose_claude(monkeypatch, isolated_home, capsys, tmp_path):
 
     client, _ = fake_client(("end_turn", json.dumps(ANSWER)))
     real = composer.compose
-    monkeypatch.setattr(cli, "compose", lambda req, lib, **kw: real(req, lib, client=client, **kw))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setattr(cli, "compose", lambda req, lib, **kw: real(req, lib, **{**kw, "client": client}))
     out_path = tmp_path / "t.json"
     assert cli.main(["compose", "-i", "forest", "-o", str(out_path)]) == 0
     assert "Forest Gate" in capsys.readouterr().out
@@ -168,5 +169,9 @@ def test_cli_compose_claude_failure(monkeypatch, isolated_home, capsys):
         raise ai.ClaudeError("no key")
 
     monkeypatch.setattr(cli, "compose", boom)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     assert cli.main(["compose"]) == 1
     assert "no key" in capsys.readouterr().err
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    assert cli.main(["compose"]) == 1
+    assert "no way to reach Claude" in capsys.readouterr().err

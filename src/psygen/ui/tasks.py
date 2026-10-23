@@ -234,7 +234,8 @@ def scan_library(cfg: config.Config, report: Report, use_claude: bool = False) -
         weak = [s for s in library if s.source in ("none", "audio")]
         if weak:
             report(f"asking Claude about {len(weak)} unclear samples")
-            changed = ai.classify_samples(weak, model=cfg.claude_model)
+            client = ai.make_client(notice=report, cfg=cfg)
+            changed = ai.classify_samples(weak, client=client, model=cfg.claude_model)
             library.save(config.index_path())
             report(f"Claude sorted {changed} samples")
     return library
@@ -270,6 +271,9 @@ def generate(
     else:
         effort = settings.composer.split("-", 1)[1]
         report(f"Claude is composing a {request.genre} track ({effort} effort, takes a minute or two)")
+        client = client or ai.make_client(notice=report, cfg=cfg)
+        if isinstance(client, ai.CliClient):
+            report("no API key, so Claude Code does the composing")
         result = compose(request, library, client=client, model=cfg.claude_model, effort=effort)
     track = result.track
     minutes, seconds = divmod(round(track.duration_seconds), 60)

@@ -71,3 +71,11 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     (tmp_path / "home").mkdir()
     return tmp_path / "home"
+
+
+@pytest.fixture(autouse=True)
+def no_claude_code(monkeypatch):
+    """Tests never run a real Claude Code; tests that want one patch this back."""
+    from psygen import ai
+
+    monkeypatch.setattr(ai, "claude_code_path", lambda cfg=None: None)

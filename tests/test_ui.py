@@ -175,7 +175,7 @@ def test_generate_needs_a_key_or_offline(tmp_path, isolated_home, monkeypatch):
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     app = make_app(tmp_path)
     assert app.generate(Settings()) is None
-    assert "No Claude API key" in app.status[0]
+    assert "No API key and no Claude Code" in app.status[0]
     assert "API key: missing" in text_of(app)
     assert app.generate(Settings(bpm="abc", composer="offline")) is None
     assert "BPM" in app.status[0]

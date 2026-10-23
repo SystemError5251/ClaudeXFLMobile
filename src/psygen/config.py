@@ -186,6 +186,8 @@ class Config:
     sample_dirs: list[str] = field(default_factory=list)
     analyze_audio: bool = True
     claude_model: str = "claude-opus-5-5"
+    claude_backend: str = "auto"  # auto (API, then Claude Code), api, claude-code
+    claude_cli: str = "claude"  # the Claude Code command
     compose_effort: str = "high"
     export_dir: str = ""  # empty: default_export_dir()
     export_sample_rate: int = 44100
