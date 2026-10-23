@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
 DEFAULT_MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 CLASSIFY_BATCH = 150
+STREAM_ABOVE = 16000
 
 
 class ClaudeError(Exception):
@@ -51,21 +52,28 @@ def ask_json(
     import anthropic
 
     client = client or make_client()
+    request = dict(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": prompt}],
+        output_config={
+            "effort": effort,
+            "format": {"type": "json_schema", "schema": schema},
+        },
+        # If a safety classifier declines, the API retries on its
+        # recommended fallback model instead of returning the refusal.
+        betas=[FALLBACK_BETA],
+        fallbacks="default",
+    )
     try:
-        response = client.beta.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
-            output_config={
-                "effort": effort,
-                "format": {"type": "json_schema", "schema": schema},
-            },
-            # If a safety classifier declines, the API retries on its
-            # recommended fallback model instead of returning the refusal.
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
-        )
+        if max_tokens > STREAM_ABOVE:
+            # Long answers (whole tracks) must stream, or the SDK refuses
+            # the request because it could outlast the HTTP timeout.
+            with client.beta.messages.stream(**request) as stream:
+                response = stream.get_final_message()
+        else:
+            response = client.beta.messages.create(**request)
     except anthropic.AuthenticationError as exc:
         raise ClaudeError("the Claude API key was rejected (check ANTHROPIC_API_KEY)") from exc
     except anthropic.RateLimitError as exc:

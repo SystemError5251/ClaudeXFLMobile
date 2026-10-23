@@ -68,5 +68,6 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     (tmp_path / "home").mkdir()
     return tmp_path / "home"
