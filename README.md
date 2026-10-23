@@ -15,7 +15,7 @@ Install Termux from F-Droid or GitHub (the Play Store build is outdated), then:
 
 ```sh
 pkg update && pkg upgrade
-pkg install python git python-numpy ffmpeg libsndfile rust binutils
+pkg install python git python-numpy ffmpeg libsndfile
 
 # Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
 termux-setup-storage
@@ -35,10 +35,10 @@ source ~/.bashrc
 
 Notes:
 
-- **anthropic** (the Claude SDK) depends on `pydantic-core` and `jiter`,
-  which are written in Rust. If pip finds no prebuilt wheel for your phone it
-  compiles them, which is why `rust` and `binutils` are in the `pkg` line.
-  That first install can take a while; later ones are quick.
+- psygen talks to the Claude API with Python's standard library and needs
+  no Rust or C compiler, so `pip install -e .` only pulls in `mido`. (It does
+  not use the `anthropic` SDK, whose Rust-built dependencies don't build on
+  Termux.)
 - **numpy**: install it with `pkg install python-numpy`, not pip. Building it
   from source on a phone takes ages and often fails.
 - **soundfile** (optional) reads FLAC/OGG/AIFF quickly via libsndfile. Without
