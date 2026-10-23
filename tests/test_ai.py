@@ -1,5 +1,6 @@
+import io
 import json
-from types import SimpleNamespace
+import urllib.error
 
 import pytest
 
@@ -8,37 +9,25 @@ from psygen.samples import Category
 from psygen.samples.library import Sample
 
 
-class FakeMessages:
+class FakeClient:
+    """Stands in for ai.HttpClient: records request bodies, returns canned replies."""
+
     def __init__(self, replies):
         self.replies = list(replies)
         self.calls = []
 
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
+    def send(self, body, *, stream=False, betas=()):
+        self.calls.append(dict(body, _streamed=stream, _betas=list(betas)))
         reply = self.replies.pop(0)
         if isinstance(reply, Exception):
             raise reply
         stop, text = reply
-        content = [SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=text)]
-        return SimpleNamespace(stop_reason=stop, content=content)
-
-    def stream(self, **kwargs):
-        response = self.create(**kwargs)
-        self.calls[-1]["_streamed"] = True
-
-        class Stream:
-            def __enter__(self):
-                return SimpleNamespace(get_final_message=lambda: response)
-
-            def __exit__(self, *exc):
-                return False
-
-        return Stream()
+        return {"stop_reason": stop, "content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": text}]}
 
 
 def fake_client(*replies):
-    messages = FakeMessages(replies)
-    return SimpleNamespace(beta=SimpleNamespace(messages=messages)), messages
+    client = FakeClient(replies)
+    return client, client
 
 
 def test_ask_json_request_shape():
@@ -48,15 +37,15 @@ def test_ask_json_request_shape():
     assert call["model"] == "claude-opus-5-5"
     assert call["output_config"]["format"] == {"type": "json_schema", "schema": {"type": "object"}}
     assert call["fallbacks"] == "default"
-    assert call["betas"] == [ai.FALLBACK_BETA]
+    assert call["_betas"] == [ai.FALLBACK_BETA]
+    assert "stream" not in call
 
 
 def test_ask_json_streams_long_answers():
     client, messages = fake_client(("end_turn", '{"a": 1}'), ("end_turn", '{"b": 2}'))
     assert ai.ask_json("sys", "hi", {}, client=client, max_tokens=64000) == {"a": 1}
     assert ai.ask_json("sys", "hi", {}, client=client) == {"b": 2}
-    assert messages.calls[0].get("_streamed") and not messages.calls[1].get("_streamed")
-    assert messages.calls[0]["fallbacks"] == "default"
+    assert messages.calls[0]["_streamed"] and not messages.calls[1]["_streamed"]
 
 
 @pytest.mark.parametrize("stop, text", [("refusal", ""), ("max_tokens", '{"a"'), ("end_turn", "not json")])
@@ -66,14 +55,133 @@ def test_ask_json_bad_answers(stop, text):
         ai.ask_json("sys", "hi", {}, client=client)
 
 
-def test_ask_json_connection_error():
-    import anthropic
-    import httpx2
+def test_make_client_needs_a_key(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    with pytest.raises(ai.ClaudeError, match="ANTHROPIC_API_KEY"):
+        ai.make_client()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert ai.make_client().api_key == "sk-test"
 
-    err = anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.anthropic.com"))
-    client, _ = fake_client(err)
+
+# -- the urllib client ---------------------------------------------------------
+
+SSE = b"""event: message_start
+data: {"type":"message_start","message":{"id":"msg_1","model":"claude-opus-5-5","content":[],"stop_reason":null}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+event: ping
+data: {"type":"ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"{\\"a\\": "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"1}"}}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}
+
+event: message_stop
+data: {"type":"message_stop"}
+"""
+
+
+class FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def fake_urlopen(monkeypatch, *replies):
+    seen = []
+
+    def urlopen(request, timeout=None):
+        seen.append(request)
+        reply = replies[len(seen) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        return FakeResponse(reply)
+
+    monkeypatch.setattr(ai.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(ai.time, "sleep", lambda s: None)
+    return seen
+
+
+def test_read_sse_assembles_the_message():
+    msg = ai.read_sse(io.BytesIO(SSE))
+    assert msg["stop_reason"] == "end_turn" and msg["model"] == "claude-opus-5-5"
+    assert [b["type"] for b in msg["content"]] == ["thinking", "text"]
+    assert json.loads(msg["content"][1]["text"]) == {"a": 1}
+
+
+def test_read_sse_error_event():
+    data = b'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n'
+    with pytest.raises(ai.ClaudeError, match="Overloaded"):
+        ai.read_sse(io.BytesIO(data))
+
+
+def test_http_client_streams_with_headers(monkeypatch):
+    seen = fake_urlopen(monkeypatch, SSE)
+    client = ai.HttpClient(api_key="sk-test")
+    assert ai.ask_json("sys", "hi", {}, client=client, max_tokens=64000) == {"a": 1}
+    request = seen[0]
+    assert request.full_url == ai.API_URL
+    headers = {k.lower(): v for k, v in request.header_items()}
+    assert headers["x-api-key"] == "sk-test"
+    assert headers["anthropic-version"] == ai.API_VERSION
+    assert headers["anthropic-beta"] == ai.FALLBACK_BETA
+    body = json.loads(request.data)
+    assert body["stream"] is True and body["fallbacks"] == "default"
+
+
+def test_http_client_plain_request_and_auth_token(monkeypatch):
+    reply = json.dumps({"stop_reason": "end_turn", "content": [{"type": "text", "text": '{"b": 2}'}]}).encode()
+    seen = fake_urlopen(monkeypatch, reply)
+    client = ai.HttpClient(auth_token="tok")
+    assert ai.ask_json("sys", "hi", {}, client=client) == {"b": 2}
+    headers = {k.lower(): v for k, v in seen[0].header_items()}
+    assert headers["authorization"] == "Bearer tok" and "x-api-key" not in headers
+    assert "oauth-2025-04-20" in headers["anthropic-beta"]
+    assert "stream" not in json.loads(seen[0].data)
+
+
+def _http_error(code, message="boom"):
+    body = json.dumps({"type": "error", "error": {"type": "x", "message": message}}).encode()
+    return urllib.error.HTTPError(ai.API_URL, code, message, {}, io.BytesIO(body))
+
+
+def test_http_client_retries_then_succeeds(monkeypatch):
+    ok = json.dumps({"stop_reason": "end_turn", "content": [{"type": "text", "text": "{}"}]}).encode()
+    seen = fake_urlopen(monkeypatch, _http_error(529), urllib.error.URLError("reset"), ok)
+    assert ai.HttpClient(api_key="k").send({"model": "m"}) == {"stop_reason": "end_turn", "content": [{"type": "text", "text": "{}"}]}
+    assert len(seen) == 3
+
+
+@pytest.mark.parametrize("error, match", [
+    (_http_error(401), "key was rejected"),
+    (_http_error(400, "max_tokens too large"), "400: max_tokens too large"),
+])
+def test_http_client_errors_are_not_retried(monkeypatch, error, match):
+    seen = fake_urlopen(monkeypatch, error, error)
+    with pytest.raises(ai.ClaudeError, match=match):
+        ai.HttpClient(api_key="k").send({})
+    assert len(seen) == 1
+
+
+def test_http_client_gives_up_offline(monkeypatch):
+    err = urllib.error.URLError("no route")
+    seen = fake_urlopen(monkeypatch, err, err, err)
     with pytest.raises(ai.ClaudeError, match="internet"):
-        ai.ask_json("sys", "hi", {}, client=client)
+        ai.HttpClient(api_key="k").send({})
+    assert len(seen) == ai.RETRIES + 1
 
 
 def _sample(path, **kw):

@@ -90,12 +90,34 @@ def flm_output_dir() -> Path | None:
     return None
 
 
+def default_export_dir() -> Path:
+    """Where exports go unless ``export_dir`` is set.
+
+    FL Studio Mobile's own folder when Termux can reach it (``My Samples``
+    shows up in its sample browser), else ``Music/psygen`` in shared storage
+    (importable from FL Studio Mobile's file browser), else a local folder.
+    """
+    flm = flm_output_dir()
+    if flm is not None:
+        return flm / "My Samples" / "psygen"
+    for root in SHARED_STORAGE_ROOTS:
+        try:
+            if root.is_dir() and os.access(root, os.W_OK):
+                return root / "Music" / "psygen"
+        except OSError:
+            continue
+    return data_dir() / "exports"
+
+
 @dataclass
 class Config:
     sample_dirs: list[str] = field(default_factory=list)
     analyze_audio: bool = True
     claude_model: str = "claude-opus-5-5"
     compose_effort: str = "high"
+    export_dir: str = ""  # empty: default_export_dir()
+    export_sample_rate: int = 44100
+    export_bits: int = 16
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
@@ -119,6 +141,9 @@ class Config:
             return False
         self.sample_dirs.append(resolved)
         return True
+
+    def resolved_export_dir(self) -> Path:
+        return Path(self.export_dir).expanduser() if self.export_dir else default_export_dir()
 
     def resolved_sample_dirs(self) -> list[Path]:
         """Configured folders, or the auto-detected defaults when none are set."""

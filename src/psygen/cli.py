@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 
 from . import __version__, ai, config
 from .compose import GENRES, ComposeRequest, Track, compose, skeleton
 from .compose.theory import SCALES
+from .export import ExportOptions, export_track, slugify
 from .samples import Category, SampleLibrary
 from .samples.audio_io import numpy_available
 
@@ -98,12 +98,9 @@ def _cmd_dirs(args: argparse.Namespace) -> int:
         print(f"  {d}")
     flm = config.flm_output_dir()
     print(f"FL Studio Mobile folder: {flm or 'not reachable'}")
+    print(f"Exports go to: {cfg.resolved_export_dir()}")
     print(f"Termux: {'yes' if config.is_termux() else 'no'}")
     return 0
-
-
-def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "track"
 
 
 def print_track(track: Track) -> None:
@@ -148,9 +145,71 @@ def _cmd_compose(args: argparse.Namespace) -> int:
         print(f"Rule fixes ({len(result.fixes)}):")
         for fix in result.fixes:
             print(f"  - {fix}")
-    out = Path(args.out) if args.out else config.tracks_dir() / f"{_slug(track.title)}.json"
+    out = Path(args.out) if args.out else config.tracks_dir() / f"{slugify(track.title)}.json"
     print(f"Saved {track.save(out)}")
+    if args.export:
+        return _export(track, cfg, lib, args)
     return 0
+
+
+def _latest_track() -> Path | None:
+    tracks = sorted(config.tracks_dir().glob("*.json"), key=lambda p: p.stat().st_mtime)
+    return tracks[-1] if tracks else None
+
+
+def _export(track: Track, cfg: config.Config, lib: SampleLibrary, args: argparse.Namespace) -> int:
+    options = ExportOptions(
+        sample_rate=args.sample_rate or cfg.export_sample_rate,
+        bits=args.bits or cfg.export_bits,
+        stems=not (args.midi_only or args.no_stems),
+        preview=not (args.midi_only or args.no_preview),
+        mp3=args.mp3,
+    )
+    root = Path(args.dest).expanduser() if args.dest else cfg.resolved_export_dir()
+    print(f"Exporting to {root}")
+
+    def progress(msg: str) -> None:
+        print(f"  {msg}", flush=True)
+
+    try:
+        result = export_track(track, root, options, library=lib, progress=progress)
+    except (OSError, ValueError) as exc:
+        print(f"Export failed: {exc}", file=sys.stderr)
+        return 1
+    for warning in result.warnings:
+        print(f"  ! {warning}")
+    print(f"Done: {result.folder}")
+    print(f"  {result.full_midi.name} and {len(result.part_midi)} part MIDI files in midi/")
+    if result.stems:
+        print(f"  {len(result.stems)} WAV stems in stems/")
+    for extra in (result.preview, result.mp3):
+        if extra:
+            print(f"  {extra.name}")
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    path = Path(args.path) if args.path else _latest_track()
+    if path is None:
+        print("No composed tracks yet. Run `psygen compose` first.", file=sys.stderr)
+        return 1
+    try:
+        track = Track.load(path)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"Cannot read {path}: {exc}", file=sys.stderr)
+        return 1
+    print(f"Exporting {track.title} ({path.name})")
+    return _export(track, config.Config.load(), SampleLibrary.load(config.index_path()), args)
+
+
+def _add_export_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--dest", help="export folder (default: FL Studio Mobile's folder, see `psygen dirs`)")
+    p.add_argument("--midi-only", action="store_true", help="skip all audio")
+    p.add_argument("--no-stems", action="store_true", help="only the preview mixdown")
+    p.add_argument("--no-preview", action="store_true", help="only the stems")
+    p.add_argument("--mp3", action="store_true", help="also write the preview as MP3 (needs ffmpeg)")
+    p.add_argument("--sample-rate", type=int, choices=(22050, 44100, 48000))
+    p.add_argument("--bits", type=int, choices=(16, 24))
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
@@ -190,7 +249,14 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--seed", type=int, help="seed for sample choices")
     comp.add_argument("--offline", action="store_true", help="template track without Claude")
     comp.add_argument("-o", "--out", help="output JSON path")
+    comp.add_argument("--export", action="store_true", help="export MIDI and WAV right after composing")
+    _add_export_args(comp)
     comp.set_defaults(func=_cmd_compose)
+
+    exp = sub.add_parser("export", help="write MIDI per part, WAV stems and a preview for FL Studio Mobile")
+    exp.add_argument("path", nargs="?", help="track JSON (default: the newest composed track)")
+    _add_export_args(exp)
+    exp.set_defaults(func=_cmd_export)
 
     show = sub.add_parser("show", help="summarize a composed track JSON")
     show.add_argument("path")
