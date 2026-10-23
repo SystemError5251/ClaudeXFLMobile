@@ -20,20 +20,11 @@ pkg install python git python-numpy ffmpeg libsndfile rust binutils
 # Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
 termux-setup-storage
 
-# The repository is private, so GitHub needs to know it's you:
-pkg install gh
-gh auth login            # GitHub.com, HTTPS, log in with the browser
-gh repo clone SystemError5251/ClaudeXFLMobile
+git clone https://github.com/SystemError5251/ClaudeXFLMobile.git
 cd ClaudeXFLMobile
 pip install -e .
 pip install soundfile        # optional, see below
 ```
-
-Without `gh`, plain git works too:
-`git clone https://github.com/SystemError5251/ClaudeXFLMobile.git`. When it
-asks for a password, paste a personal access token
-(GitHub → Settings → Developer settings → Personal access tokens) instead of
-your GitHub password; GitHub no longer accepts passwords for git.
 
 Then set your Claude API key (from the [Claude Console](https://platform.claude.com/)):
 
