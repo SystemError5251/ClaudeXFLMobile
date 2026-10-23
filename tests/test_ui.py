@@ -418,3 +418,41 @@ def test_curses_ui_starts_and_quits(tmp_path, isolated_home):
         os.kill(pid, 9)
         raise AssertionError("UI did not quit")
     assert os.waitstatus_to_exitcode(status) == 0
+
+
+def test_first_start_runs_termux_setup_storage_once(tmp_path, isolated_home, monkeypatch):
+    from psygen.ui import app as ui_app
+
+    shared = tmp_path / "shared"
+    monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (shared,))
+    monkeypatch.setattr(config, "is_termux", lambda: True)
+    monkeypatch.setattr(ui_app.shutil, "which", lambda name: "/bin/" + name)
+    ran = []
+
+    def fake_run(cmd):
+        ran.append(cmd)
+        (shared / "Music").mkdir(parents=True)  # the user allowed access
+
+    cfg = config.Config.load()
+    ui_app.first_start_storage_setup(cfg, run=fake_run, sleep=lambda s: None)
+    assert ran == [["termux-setup-storage"]]
+    assert config.Config.load().storage_setup_done
+
+    # never again, even if access is gone later
+    import shutil as sh
+    sh.rmtree(shared)
+    ui_app.first_start_storage_setup(config.Config.load(), run=fake_run, sleep=lambda s: None)
+    assert len(ran) == 1
+
+
+def test_first_start_skips_when_storage_works_or_not_termux(tmp_path, isolated_home, monkeypatch):
+    from psygen.ui import app as ui_app
+
+    ran = []
+    monkeypatch.setattr(config, "is_termux", lambda: False)
+    ui_app.first_start_storage_setup(config.Config(), run=ran.append, sleep=lambda s: None)
+    monkeypatch.setattr(config, "is_termux", lambda: True)
+    monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (tmp_path,))
+    cfg = config.Config()
+    ui_app.first_start_storage_setup(cfg, run=ran.append, sleep=lambda s: None)
+    assert ran == [] and cfg.storage_setup_done

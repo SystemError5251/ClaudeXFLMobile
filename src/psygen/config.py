@@ -191,6 +191,7 @@ class Config:
     export_sample_rate: int = 44100
     export_bits: int = 16
     ui: dict = field(default_factory=dict)  # last choices in the terminal UI
+    storage_setup_done: bool = False  # termux-setup-storage ran on the first start
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":

@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import locale
 import os
+import shutil
+import subprocess
 import sys
+import time
 
 from .widgets import Line
 
@@ -194,6 +197,42 @@ class CursesApp:
                 self.c.handle(key)
 
 
+def first_start_storage_setup(cfg, run=subprocess.run, sleep=time.sleep, wait_seconds: float = 60) -> None:
+    """On the first start in Termux, run ``termux-setup-storage`` so psygen
+    can read samples and write exports in internal storage. Only once: the
+    config remembers it, whatever the user answers in Android's dialog."""
+    from .. import config
+
+    if cfg.storage_setup_done or not config.is_termux():
+        return
+    cfg.storage_setup_done = True
+    try:
+        cfg.save()
+    except OSError:
+        pass
+    if config.storage_ready():
+        return
+    if shutil.which("termux-setup-storage") is None:
+        print("termux-setup-storage not found; psygen can't reach internal storage.")
+        return
+    print("First start: psygen needs access to your internal storage (samples and FLM User Files).")
+    print("Allow it in the Android dialog that opens now.")
+    try:
+        run(["termux-setup-storage"])
+    except OSError as exc:
+        print(f"Could not run termux-setup-storage: {exc}")
+        return
+    waited = 0.0
+    while not config.storage_ready() and waited < wait_seconds:
+        sleep(1)
+        waited += 1
+    if config.storage_ready():
+        print("Storage access granted.")
+    else:
+        print("No storage access yet. Run termux-setup-storage yourself later, then restart Termux.")
+        sleep(2)
+
+
 def run() -> int:
     """Start the UI. Returns an exit code for the CLI."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -204,10 +243,13 @@ def run() -> int:
     except ImportError:
         print("Python's curses module is missing (on Termux: pkg install python ncurses).", file=sys.stderr)
         return 1
+    from .. import config
     from .screens import Controller
 
+    cfg = config.Config.load()
+    first_start_storage_setup(cfg)
     locale.setlocale(locale.LC_ALL, "")
     os.environ.setdefault("ESCDELAY", "25")  # esc reacts at once instead of after 1 s
-    controller = Controller()
+    controller = Controller(cfg)
     curses.wrapper(CursesApp(controller).run)
     return 0

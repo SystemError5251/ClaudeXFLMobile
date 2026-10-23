@@ -17,7 +17,8 @@ Install Termux from F-Droid or GitHub (the Play Store build is outdated), then:
 pkg update && pkg upgrade
 pkg install python git python-numpy ffmpeg libsndfile
 
-# Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
+# Let Termux read your shared storage (Downloads, Music, FLM User Files…).
+# psygen also runs this by itself the first time you start it.
 termux-setup-storage
 
 git clone https://github.com/SystemError5251/ClaudeXFLMobile.git
