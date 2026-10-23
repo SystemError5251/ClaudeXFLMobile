@@ -20,6 +20,10 @@ SKIP_DIRS = frozenset({"android", ".thumbnails", ".trash", "lost+found", "__pyca
 
 INDEX_VERSION = 1
 
+# psygen writes this file into every export folder so its own stems are never
+# indexed as samples (exports can land in "FL Studio Mobile/My Samples").
+EXPORT_MARKER = ".psygen-export"
+
 
 @dataclass
 class Sample:
@@ -63,6 +67,9 @@ def iter_audio_files(root: Path) -> Iterator[Path]:
     below it are not followed, which avoids loops on Android storage.
     """
     for dirpath, dirnames, filenames in os.walk(root, onerror=lambda e: None):
+        if EXPORT_MARKER in filenames:
+            dirnames[:] = []
+            continue
         dirnames[:] = sorted(
             d for d in dirnames if not d.startswith(".") and d.lower() not in SKIP_DIRS
         )

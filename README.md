@@ -6,8 +6,8 @@ API, does the musical decisions; psygen handles your samples, enforces the
 genre rules and exports MIDI per part plus WAV stems and a preview that you
 can load into FL Studio Mobile.
 
-> Status: step 2 of 4. The sample library and composing are done; MIDI/WAV
-> export and the full terminal UI come next.
+> Status: step 3 of 4. The sample library, composing and MIDI/WAV export
+> are done; the full terminal UI comes next.
 
 ## Install on Termux
 
@@ -20,11 +20,20 @@ pkg install python git python-numpy ffmpeg libsndfile rust binutils
 # Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
 termux-setup-storage
 
-git clone https://github.com/SystemError5251/ClaudeXFLMobile
+# The repository is private, so GitHub needs to know it's you:
+pkg install gh
+gh auth login            # GitHub.com, HTTPS, log in with the browser
+gh repo clone SystemError5251/ClaudeXFLMobile
 cd ClaudeXFLMobile
 pip install -e .
 pip install soundfile        # optional, see below
 ```
+
+Without `gh`, plain git works too:
+`git clone https://github.com/SystemError5251/ClaudeXFLMobile.git`. When it
+asks for a password, paste a personal access token
+(GitHub → Settings → Developer settings → Personal access tokens) instead of
+your GitHub password; GitHub no longer accepts passwords for git.
 
 Then set your Claude API key (from the [Claude Console](https://platform.claude.com/)):
 
@@ -128,10 +137,65 @@ listing every change:
   drop; drops always have kick and bass, breakdowns never do
 - total length in a sensible range for the genre (or near `--minutes`)
 
-The result is saved as JSON in `~/.local/share/psygen/tracks/`; step 3 turns
-it into MIDI and audio. Composing uses `claude-opus-5-5` at `high` effort
+The result is saved as JSON in `~/.local/share/psygen/tracks/`; `psygen
+export` turns it into MIDI and audio (or add `--export` to `compose`). Composing uses `claude-opus-5-5` at `high` effort
 (set `compose_effort` in the config to `medium` or `low` for cheaper, faster
 runs). A whole track is a long answer, so expect a minute or two.
+
+## Exporting for FL Studio Mobile
+
+```sh
+psygen export                        # the newest composed track
+psygen export ~/.local/share/psygen/tracks/forest-gate.json --mp3
+psygen compose -g goa --export       # compose and export in one go
+psygen export --midi-only            # no audio, takes a second
+psygen export --dest ~/storage/shared/Download/psy --bits 24
+```
+
+Each track gets its own folder:
+
+```
+forest-gate/
+  forest-gate.mid           whole arrangement, one MIDI track per part
+  forest-gate-preview.wav   stereo mixdown (+ .mp3 with --mp3, needs ffmpeg)
+  midi/01-kick.mid ...      one MIDI file per part
+  stems/01-kick.wav ...     one WAV per part, all starting at bar 1
+  info.txt                  tempo, key, arrangement, which sample each part uses
+  track.json                the track itself, to export again later
+```
+
+Where it goes (`psygen dirs` shows it): `FL Studio Mobile/My Samples/psygen/`
+when Termux can reach FL Studio Mobile's folder, so the stems show up in its
+sample browser; otherwise `Music/psygen/` in shared storage, which you can
+open from FL Studio Mobile's file browser. Set `export_dir` in
+`~/.config/psygen/config.json` (or pass `--dest`) to use another folder.
+`export_sample_rate` (44100) and `export_bits` (16) are there too. psygen
+never scans its own export folders as samples.
+
+In FL Studio Mobile:
+
+- Set the project tempo to the track's BPM (it is in `info.txt`).
+- **Audio:** put each stem from `stems/` on its own track at bar 1. All stems
+  are the same length, so they stay in sync. Stems are mono and already at
+  mix balance with 6 dB headroom; the preview is panned and limited.
+- **MIDI:** load the part's sample (or any FL Studio Mobile instrument) into a
+  channel and import `midi/NN-part.mid` into its piano roll. Drum and one-shot
+  parts are written on C5, so a sampler plays them at their own pitch. The
+  MIDI files carry the tempo and a marker per section.
+- The full `.mid` file uses General MIDI drum notes on channel 10, so it also
+  plays sensibly in other apps.
+
+How the audio is made: drum and one-shot parts play your sample on every hit,
+cut off by the next hit. Melodic parts (bass, arp, lead, pad) repitch the
+sample from its detected root note, like a classic sampler, so speed and
+pitch change together. Loops with a tempo in the name are sped up or slowed
+down to the track's tempo when they are within about 15%. Parts without a
+sample (or whose file is gone) use simple built-in sounds, so the preview is
+always complete; `info.txt` lists which part used what. Without numpy only
+the MIDI files are written.
+
+Stems are full length, so an 8-minute track is about 40 MB per stem at
+44.1 kHz / 16 bit. Use `--no-stems` if you only want the preview and MIDI.
 
 ## Development
 
