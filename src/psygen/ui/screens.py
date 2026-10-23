@@ -203,9 +203,7 @@ class FoldersScreen(Screen):
                 items.append(Static("Found automatically:", "dim"))
                 items.extend(Static("  " + str(d)) for d in auto)
             else:
-                items.append(Static(
-                    "No sample folders found. Run termux-setup-storage, put samples in "
-                    "Internal storage/Samples, or add a folder below.", "warn"))
+                items.append(Static(config.no_sample_dirs_hint(), "warn"))
         items += [self.new, self.use_claude, Button("Scan now", "scan"), Button("Back", "back", "normal"), Static()]
         lib = self.app.library
         if len(lib):

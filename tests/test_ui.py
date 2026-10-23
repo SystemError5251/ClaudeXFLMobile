@@ -276,7 +276,16 @@ def test_scan_without_folders_fails_cleanly(tmp_path, isolated_home):
     select(app, "Scan now")
     press(app, "enter")
     run = wait_job(app)
-    assert run.job.state == "failed" and "no sample folders" in run.job.error
+    assert run.job.state == "failed" and "termux-setup-storage" in run.job.error
+
+
+def test_no_folder_hint_with_storage(tmp_path, monkeypatch):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (tmp_path / "nope",))
+    assert "termux-setup-storage" in config.no_sample_dirs_hint()
+    monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (shared,))
+    assert config.storage_ready() and "FLM User Files" in config.no_sample_dirs_hint()
 
 
 def test_api_key_save_test_remove(tmp_path, isolated_home, monkeypatch):

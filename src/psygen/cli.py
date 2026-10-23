@@ -22,11 +22,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         print(f"Saved sample folders to {cfg.save()}")
     roots = [Path(d).expanduser() for d in args.dirs] if args.dirs else cfg.resolved_sample_dirs()
     if not roots:
-        print(
-            "No sample folders found. Run `termux-setup-storage`, put samples in\n"
-            "~/storage/shared/Samples, or pass a folder: psygen scan PATH --add",
-            file=sys.stderr,
-        )
+        print(config.no_sample_dirs_hint() + "\nOr pass a folder: psygen scan PATH --add", file=sys.stderr)
         return 1
     analyze = cfg.analyze_audio and not args.no_analysis
     if analyze and not numpy_available():
@@ -100,6 +96,7 @@ def _cmd_dirs(args: argparse.Namespace) -> int:
     print(f"FL Studio Mobile folder: {flm or 'not reachable'}")
     print(f"Exports go to: {cfg.resolved_export_dir()}")
     print(f"Termux: {'yes' if config.is_termux() else 'no'}")
+    print(f"Shared storage: {'readable' if config.storage_ready() else 'not readable (run termux-setup-storage)'}")
     return 0
 
 

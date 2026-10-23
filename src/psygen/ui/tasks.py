@@ -213,7 +213,7 @@ def _write_crash_log() -> None:
 def scan_library(cfg: config.Config, report: Report, use_claude: bool = False) -> SampleLibrary:
     roots = cfg.resolved_sample_dirs()
     if not roots:
-        raise ValueError("no sample folders: add one under Sample folders")
+        raise ValueError(config.no_sample_dirs_hint())
     analyze = cfg.analyze_audio and numpy_available()
     if cfg.analyze_audio and not analyze:
         report("numpy missing, sorting samples by name only (pkg install python-numpy)")

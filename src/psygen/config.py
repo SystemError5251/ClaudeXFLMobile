@@ -104,6 +104,25 @@ SAMPLE_SUBDIRS = (
 )
 
 
+def storage_ready() -> bool:
+    """True when Termux can list shared storage (termux-setup-storage done)."""
+    for root in SHARED_STORAGE_ROOTS:
+        try:
+            next(os.scandir(root), None)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def no_sample_dirs_hint() -> str:
+    if not storage_ready():
+        return ("Termux can't read your internal storage yet. Run termux-setup-storage, "
+                "allow access, restart Termux and try again.")
+    return ("No sample folders found. Put your samples in Internal storage/FLM User Files "
+            "or Internal storage/Samples, or add a folder under Sample folders.")
+
+
 def default_sample_dirs() -> list[Path]:
     """Existing sample folders found in the usual Android locations."""
     found: list[Path] = []
