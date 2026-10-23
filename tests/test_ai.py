@@ -22,6 +22,19 @@ class FakeMessages:
         content = [SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=text)]
         return SimpleNamespace(stop_reason=stop, content=content)
 
+    def stream(self, **kwargs):
+        response = self.create(**kwargs)
+        self.calls[-1]["_streamed"] = True
+
+        class Stream:
+            def __enter__(self):
+                return SimpleNamespace(get_final_message=lambda: response)
+
+            def __exit__(self, *exc):
+                return False
+
+        return Stream()
+
 
 def fake_client(*replies):
     messages = FakeMessages(replies)
@@ -36,6 +49,14 @@ def test_ask_json_request_shape():
     assert call["output_config"]["format"] == {"type": "json_schema", "schema": {"type": "object"}}
     assert call["fallbacks"] == "default"
     assert call["betas"] == [ai.FALLBACK_BETA]
+
+
+def test_ask_json_streams_long_answers():
+    client, messages = fake_client(("end_turn", '{"a": 1}'), ("end_turn", '{"b": 2}'))
+    assert ai.ask_json("sys", "hi", {}, client=client, max_tokens=64000) == {"a": 1}
+    assert ai.ask_json("sys", "hi", {}, client=client) == {"b": 2}
+    assert messages.calls[0].get("_streamed") and not messages.calls[1].get("_streamed")
+    assert messages.calls[0]["fallbacks"] == "default"
 
 
 @pytest.mark.parametrize("stop, text", [("refusal", ""), ("max_tokens", '{"a"'), ("end_turn", "not json")])

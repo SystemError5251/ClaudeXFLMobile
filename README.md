@@ -6,8 +6,8 @@ API, does the musical decisions; psygen handles your samples, enforces the
 genre rules and exports MIDI per part plus WAV stems and a preview that you
 can load into FL Studio Mobile.
 
-> Status: step 1 of 4. The sample library is done; genre engines,
-> arrangement, export and the full terminal UI come next.
+> Status: step 2 of 4. The sample library and composing are done; MIDI/WAV
+> export and the full terminal UI come next.
 
 ## Install on Termux
 
@@ -97,6 +97,41 @@ Categories: `kick`, `snare`, `clap`, `hat_closed`, `hat_open`, `cymbal`,
 
 The model defaults to `claude-opus-5-5`; change `claude_model` in
 `~/.config/psygen/config.json` to use another.
+
+## Composing a track
+
+```sh
+psygen compose                                   # psytrance, Claude picks the rest
+psygen compose -g goa -i "sunrise on the beach, twisted 303 lead" --key F# --minutes 8
+psygen compose -g progressive --bpm 134 --scale dorian
+psygen compose --offline -g psytrance            # template track, no Claude call
+psygen show ~/.local/share/psygen/tracks/forest-gate.json
+```
+
+Genres: `psytrance`, `goa`, `progressive`. Claude writes the whole track in
+one request: tempo, key and scale, which of your indexed samples each part
+uses, note patterns per part on a 16th grid (as scale degrees) and the
+arrangement of intro, build, drop, breakdown and outro sections. Parts are
+`kick`, `bass`, `hat`, `open_hat`, `clap`, `snare`, `perc`, `ride`, `arp`,
+`lead`, `pad`, `atmos`, `fx` and `vocal`.
+
+psygen then checks the answer against the genre and repairs what breaks it,
+listing every change:
+
+- tempo inside the genre range (psy and goa 138-150, progressive 130-140)
+- melodic notes in the track's scale and in each part's register; bass, arp
+  and lead are monophonic
+- kick only on quarter notes, and four-on-the-floor in every drop
+- bass never on a kick step and always over before the next kick
+- open hats on the offbeat
+- sections in whole 8-bar phrases, intro first, outro last, at least one
+  drop; drops always have kick and bass, breakdowns never do
+- total length in a sensible range for the genre (or near `--minutes`)
+
+The result is saved as JSON in `~/.local/share/psygen/tracks/`; step 3 turns
+it into MIDI and audio. Composing uses `claude-opus-5-5` at `high` effort
+(set `compose_effort` in the config to `medium` or `low` for cheaper, faster
+runs). A whole track is a long answer, so expect a minute or two.
 
 ## Development
 

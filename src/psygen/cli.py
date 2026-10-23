@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 from . import __version__, ai, config
+from .compose import GENRES, ComposeRequest, Track, compose, skeleton
+from .compose.theory import SCALES
 from .samples import Category, SampleLibrary
 from .samples.audio_io import numpy_available
 
@@ -99,6 +102,67 @@ def _cmd_dirs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "track"
+
+
+def print_track(track: Track) -> None:
+    minutes, seconds = divmod(round(track.duration_seconds), 60)
+    print(f"{track.title}  ({track.genre}, {track.bpm:g} BPM, {track.key}, "
+          f"{track.total_bars} bars, {minutes}:{seconds:02d})")
+    if track.notes:
+        print(f"  {track.notes}")
+    print("Arrangement:")
+    for s in track.sections:
+        roles = " ".join(r.value for r in track.section_patterns(s))
+        print(f"  bar {s.start_bar + 1:>3}  {s.kind.value:<9} {s.bars:>3} bars  "
+              f"energy {s.energy:>2}  {s.name}: {roles}")
+    print("Parts:")
+    for part in track.parts.values():
+        count = sum(1 for _ in track.timeline(part.role))
+        source = Path(part.sample).name if part.sample else "synth / MIDI only"
+        print(f"  {part.role.value:<9} {count:>5} notes  {source}")
+
+
+def _cmd_compose(args: argparse.Namespace) -> int:
+    cfg = config.Config.load()
+    request = ComposeRequest(
+        genre=args.genre, idea=args.idea or "", bpm=args.bpm, key=args.key,
+        scale=args.scale, minutes=args.minutes, seed=args.seed,
+    )
+    lib = SampleLibrary.load(config.index_path())
+    if not len(lib):
+        print("No sample library yet (run `psygen scan`); parts will be MIDI only.")
+    if args.offline:
+        result = skeleton(request, lib)
+    else:
+        print(f"Claude is composing a {request.profile().name} track...")
+        try:
+            result = compose(request, lib, model=cfg.claude_model, effort=cfg.compose_effort)
+        except ai.ClaudeError as exc:
+            print(f"Composing failed: {exc}\nUse --offline for a template track.", file=sys.stderr)
+            return 1
+    track = result.track
+    print_track(track)
+    if result.fixes:
+        print(f"Rule fixes ({len(result.fixes)}):")
+        for fix in result.fixes:
+            print(f"  - {fix}")
+    out = Path(args.out) if args.out else config.tracks_dir() / f"{_slug(track.title)}.json"
+    print(f"Saved {track.save(out)}")
+    return 0
+
+
+def _cmd_show(args: argparse.Namespace) -> int:
+    try:
+        track = Track.load(args.path)
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"Cannot read {args.path}: {exc}", file=sys.stderr)
+        return 1
+    print_track(track)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="psygen", description=__doc__)
     parser.add_argument("--version", action="version", version=f"psygen {__version__}")
@@ -115,6 +179,22 @@ def build_parser() -> argparse.ArgumentParser:
     lst.add_argument("-c", "--category", choices=[c.value for c in Category])
     lst.add_argument("-s", "--search", help="filter by text in the path")
     lst.set_defaults(func=_cmd_list)
+
+    comp = sub.add_parser("compose", help="let Claude compose a track (saved as JSON for export)")
+    comp.add_argument("-g", "--genre", default="psytrance", choices=list(GENRES))
+    comp.add_argument("-i", "--idea", help="mood, story or references for Claude")
+    comp.add_argument("--bpm", type=float)
+    comp.add_argument("--key", help="root note, e.g. F# or Am")
+    comp.add_argument("--scale", choices=list(SCALES))
+    comp.add_argument("--minutes", type=float, help="approximate length")
+    comp.add_argument("--seed", type=int, help="seed for sample choices")
+    comp.add_argument("--offline", action="store_true", help="template track without Claude")
+    comp.add_argument("-o", "--out", help="output JSON path")
+    comp.set_defaults(func=_cmd_compose)
+
+    show = sub.add_parser("show", help="summarize a composed track JSON")
+    show.add_argument("path")
+    show.set_defaults(func=_cmd_show)
 
     dirs = sub.add_parser("dirs", help="show sample and output folders")
     dirs.set_defaults(func=_cmd_dirs)

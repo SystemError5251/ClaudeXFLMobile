@@ -28,6 +28,16 @@ def config_path() -> Path:
     return config_dir() / "config.json"
 
 
+def data_dir() -> Path:
+    base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
+    return Path(base) / "psygen"
+
+
+def tracks_dir() -> Path:
+    """Composed tracks (JSON) waiting for export."""
+    return data_dir() / "tracks"
+
+
 def index_path() -> Path:
     return cache_dir() / "library.json"
 
@@ -85,6 +95,7 @@ class Config:
     sample_dirs: list[str] = field(default_factory=list)
     analyze_audio: bool = True
     claude_model: str = "claude-opus-5-5"
+    compose_effort: str = "high"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
