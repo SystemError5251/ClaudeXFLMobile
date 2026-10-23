@@ -11,81 +11,43 @@ export and the terminal UI. Type `psygen` and go.
 
 ## Install on Termux
 
-Install Termux from F-Droid or GitHub (the Play Store build is outdated), then:
+Get Termux from F-Droid (not the Play Store). Paste this in one go:
 
 ```sh
-pkg update && pkg upgrade
-pkg install python git python-numpy ffmpeg libsndfile
-
-# Let Termux read your shared storage (Downloads, Music, FLM User Files…).
-# psygen also runs this by itself the first time you start it.
-termux-setup-storage
-
-git clone https://github.com/SystemError5251/ClaudeXFLMobile.git
-cd ClaudeXFLMobile
-pip install -e .
-pip install soundfile        # optional, see below
-```
-
-Then start it:
-
-```sh
+pkg update -y && pkg install -y python git python-numpy ffmpeg nodejs && \
+git clone https://github.com/SystemError5251/ClaudeXFLMobile.git ~/ClaudeXFLMobile && \
+pip install -e ~/ClaudeXFLMobile && \
+npm install -g @anthropic-ai/claude-code && \
 psygen
 ```
 
-You need a Claude API key from the [Claude Console](https://platform.claude.com/).
-Paste it in the UI under **API key** (it is saved to
-`~/.config/psygen/api_key`, readable only by you), or set it in your shell:
+On the first start psygen asks for storage access: tap Allow.
 
-```sh
-echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
-source ~/.bashrc
-```
+**Claude access**, one of the two:
 
-The environment variable wins when both are set.
+- **API key:** paste it in the app under **API key** (from
+  [platform.claude.com](https://platform.claude.com/)).
+- **Claude account, no API credits:** run `claude` once, log in, `/exit`.
 
-### Claude Code as a backup (no API credits needed)
+With both, psygen uses the key and switches to Claude Code when the credits
+run out. **Update** later with `psygen update`.
 
-If you have no API key, or your API account runs out of credits, psygen
-uses [Claude Code](https://claude.com/claude-code) instead, which runs on
-the Claude account you log in with. Install it in Termux and log in once:
+<details>
+<summary>Details</summary>
 
-```sh
-pkg install nodejs
-npm install -g @anthropic-ai/claude-code
-claude          # log in once, then /exit
-```
+- Nothing needs a compiler: `pip` only adds `mido`. Install numpy with
+  `pkg`, never with pip. Without numpy only MIDI is exported.
+- ffmpeg reads MP3/M4A/Opus/FLAC. Optional and faster for FLAC/OGG/AIFF:
+  `pkg install libsndfile && pip install soundfile`.
+- The key is saved in `~/.config/psygen/api_key` (only you can read it).
+  `ANTHROPIC_API_KEY` in your shell wins over it.
+- Claude Code runs with all tools off (`claude -p --tools ""`), so it only
+  answers. A Termux build of it works too; if its command isn't `claude`,
+  set `claude_cli` in `~/.config/psygen/config.json`.
+- `claude_backend` in that config: `auto` (default), `api` or `claude-code`.
+- Desktop/development: `pip install -e ".[dev]"`.
 
-A Termux build of Claude Code works too, as long as the `claude` command is
-on your PATH (or set `claude_cli` in `~/.config/psygen/config.json` to its
-command or path). psygen runs it with all tools switched off
-(`claude -p --tools ""`), so Claude Code only answers; it never runs commands
-on your phone.
-
-Which way psygen uses is set by `claude_backend` in the config:
-
-- `auto` (default): the API with your key. When the API says the credits are
-  used up (or rejects the key), psygen switches to Claude Code. Without a
-  key it uses Claude Code right away.
-- `api`: only the API. `claude-code`: only Claude Code.
-
-The progress screen tells you when Claude Code takes over.
-
-Notes:
-
-- psygen talks to the Claude API with Python's standard library and needs
-  no Rust or C compiler, so `pip install -e .` only pulls in `mido`. (It does
-  not use the `anthropic` SDK, whose Rust-built dependencies don't build on
-  Termux.)
-- **numpy**: install it with `pkg install python-numpy`, not pip. Building it
-  from source on a phone takes ages and often fails.
-- **soundfile** (optional) reads FLAC/OGG/AIFF quickly via libsndfile. Without
-  it, WAV files are read with the standard library and everything else goes
-  through `ffmpeg`.
-- **ffmpeg** (optional) decodes MP3/M4A/Opus and anything soundfile can't read.
-- Without numpy, `psygen` still works but sorts samples by name only.
-
-On a desktop (for development) a normal `pip install -e ".[dev]"` works.
+</details>
 
 ## The terminal UI
 
@@ -289,15 +251,12 @@ Stems are full length, so an 8-minute track is about 40 MB per stem at
 ## Updating
 
 ```sh
-psygen update            # git pull in the install folder, then restart psygen
-psygen update --check    # only show what's new
+psygen update          # then restart psygen
+psygen update --check  # only show what's new
 ```
 
-This updates the folder you cloned in the install step. pip only runs
-again when the dependencies changed. If you edited files in that folder,
-psygen won't overwrite them: keep them with `git stash` (or drop them with
-`git checkout .`) and run the update again. If psygen wasn't installed with
-`git clone`, the command explains how to reinstall it that way.
+It never overwrites your own edits in the install folder; it tells you
+what to do instead (`git stash`).
 
 ## Development
 
