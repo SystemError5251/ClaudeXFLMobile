@@ -116,14 +116,19 @@ All of it also works as plain commands, described below, for scripts.
 Put your samples somewhere in shared storage. These folders are picked up
 automatically when they exist:
 
+- `~/storage/shared/FLM User Files` (FL Studio Mobile's official user
+  folder, with all its subfolders)
 - `~/storage/shared/Samples` (that is, `Internal storage/Samples`)
 - `~/storage/shared/Music/Samples`
 - `~/storage/shared/Download/Samples`
 - `~/storage/shared/FL Studio Mobile/My Samples`
 
-On Android 11 and newer, FL Studio Mobile's own folder under `Android/data`
-is usually not readable by Termux. Copy or move your samples to one of the
-folders above instead.
+If your `FLM User Files` sits under `Android/data/com.imageline.FLM/files/`
+instead, psygen tries that too, but on Android 11 and newer Termux usually
+can't read it. Copy or move your samples to one of the folders above then.
+If you configure your own folders (`psygen scan PATH --add` or in the UI),
+auto-detection stops, so add `FLM User Files` to that list too if you
+want it.
 
 ```sh
 psygen dirs                          # show which folders will be scanned
@@ -217,9 +222,10 @@ forest-gate/
   track.json                the track itself, to export again later
 ```
 
-Where it goes (`psygen dirs` shows it): `FL Studio Mobile/My Samples/psygen/`
-when Termux can reach FL Studio Mobile's folder, so the stems show up in its
-sample browser; otherwise `Music/psygen/` in shared storage, which you can
+Where it goes (`psygen dirs` shows it): `FLM User Files/My Samples/psygen/`
+when Termux can write to FL Studio Mobile's user folder (or the older
+`FL Studio Mobile/My Samples/psygen/`), so the stems show up in its sample
+browser; otherwise `Music/psygen/` in shared storage, which you can
 open from FL Studio Mobile's file browser. Set `export_dir` in
 `~/.config/psygen/config.json` (or pass `--dest`) to use another folder.
 `export_sample_rate` (44100) and `export_bits` (16) are there too. psygen

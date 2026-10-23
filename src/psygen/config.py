@@ -75,16 +75,26 @@ def index_path() -> Path:
 
 
 # Places where samples commonly live on Android. `~/storage/shared` only exists
-# after running `termux-setup-storage`. FL Studio Mobile keeps user samples in
-# "FL Studio Mobile/My Samples" on older Android versions; on Android 11+ its
-# app folder under Android/data is not readable by Termux.
+# after running `termux-setup-storage`. FL Studio Mobile's official user folder
+# is "FLM User Files" (samples, recordings, projects); older versions used
+# "FL Studio Mobile/My Samples". On Android 11+ anything under Android/data is
+# usually not readable by Termux, but it is tried anyway.
 SHARED_STORAGE_ROOTS = (
     Path.home() / "storage" / "shared",
     Path("/storage/emulated/0"),
     Path("/sdcard"),
 )
 
+# FL Studio Mobile's user folders, preferred first (also the export target).
+FLM_USER_DIRS = (
+    "FLM User Files",
+    "Android/data/com.imageline.FLM/files/FLM User Files",
+    "FL Studio Mobile",
+)
+
 SAMPLE_SUBDIRS = (
+    "FLM User Files",
+    "Android/data/com.imageline.FLM/files/FLM User Files",
     "Samples",
     "samples",
     "Music/Samples",
@@ -114,11 +124,15 @@ def default_sample_dirs() -> list[Path]:
 
 
 def flm_output_dir() -> Path | None:
-    """FL Studio Mobile's user folder if Termux can reach it."""
-    for root in SHARED_STORAGE_ROOTS:
-        candidate = root / "FL Studio Mobile"
-        if candidate.is_dir():
-            return candidate
+    """FL Studio Mobile's user folder ("FLM User Files") if Termux can write to it."""
+    for sub in FLM_USER_DIRS:
+        for root in SHARED_STORAGE_ROOTS:
+            candidate = root / sub
+            try:
+                if candidate.is_dir() and os.access(candidate, os.W_OK):
+                    return candidate
+            except OSError:
+                continue
     return None
 
 

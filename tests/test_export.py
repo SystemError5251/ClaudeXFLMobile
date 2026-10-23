@@ -259,6 +259,8 @@ def test_default_export_dir(tmp_path, monkeypatch, isolated_home):
     assert config.default_export_dir() == shared / "Music" / "psygen"
     (shared / "FL Studio Mobile").mkdir()
     assert config.default_export_dir() == shared / "FL Studio Mobile" / "My Samples" / "psygen"
+    (shared / "FLM User Files").mkdir()
+    assert config.default_export_dir() == shared / "FLM User Files" / "My Samples" / "psygen"
     monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (tmp_path / "nope",))
     assert config.default_export_dir() == config.data_dir() / "exports"
     assert config.Config(export_dir="~/x").resolved_export_dir() == isolated_home / "x"
