@@ -121,3 +121,14 @@ def test_cli_scan_and_list(sample_tree, isolated_home, capsys):
 
 def test_cli_list_empty(isolated_home, capsys):
     assert cli.main(["list"]) == 1
+
+
+def test_flm_user_files_is_scanned_by_default(tmp_path, monkeypatch):
+    from psygen import config
+
+    shared = tmp_path / "shared"
+    (shared / "FLM User Files" / "My Samples").mkdir(parents=True)
+    (shared / "Samples").mkdir()
+    monkeypatch.setattr(config, "SHARED_STORAGE_ROOTS", (shared,))
+    assert config.default_sample_dirs() == [shared / "FLM User Files", shared / "Samples"]
+    assert config.flm_output_dir() == shared / "FLM User Files"

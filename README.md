@@ -6,62 +6,130 @@ API, does the musical decisions; psygen handles your samples, enforces the
 genre rules and exports MIDI per part plus WAV stems and a preview that you
 can load into FL Studio Mobile.
 
-> Status: step 3 of 4. The sample library, composing and MIDI/WAV export
-> are done; the full terminal UI comes next.
+All four steps of the plan are in: sample library, composing, MIDI/WAV
+export and the terminal UI. Type `psygen` and go.
 
 ## Install on Termux
 
-Install Termux from F-Droid or GitHub (the Play Store build is outdated), then:
+Get Termux from F-Droid (not the Play Store). Paste this in one go:
 
 ```sh
-pkg update && pkg upgrade
-pkg install python git python-numpy ffmpeg libsndfile
-
-# Let Termux read your shared storage (Downloads, Music, FL Studio Mobile…)
-termux-setup-storage
-
-git clone https://github.com/SystemError5251/ClaudeXFLMobile.git
-cd ClaudeXFLMobile
-pip install -e .
-pip install soundfile        # optional, see below
+pkg update -y && pkg install -y python git python-numpy ffmpeg nodejs termux-api && \
+git clone https://github.com/SystemError5251/ClaudeXFLMobile.git ~/ClaudeXFLMobile && \
+pip install -e ~/ClaudeXFLMobile && \
+npm install -g @anthropic-ai/claude-code && \
+psygen
 ```
 
-Then set your Claude API key (from the [Claude Console](https://platform.claude.com/)):
+On the first start psygen asks for storage access: tap Allow.
 
-```sh
-echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
-source ~/.bashrc
+**Claude access**, one of the two:
+
+- **API key:** paste it in the app under **API key** (from
+  [platform.claude.com](https://platform.claude.com/)).
+- **Claude account, no API credits:** run `claude` once, log in, `/exit`.
+
+With both, psygen uses the key and switches to Claude Code when the credits
+run out. **Update** later with `psygen update`.
+
+**Straight into FL Studio Mobile:** when a track is ready, psygen opens FL
+Studio Mobile; the track is in its sample browser under `My Samples/psygen`.
+**Generate in background** (or `psygen compose --background`) lets you
+leave Termux right away: it keeps running, shows a notification when done
+(needs the [Termux:API](https://f-droid.org/packages/com.termux.api/) app)
+and then opens FL Studio Mobile.
+
+<details>
+<summary>Details</summary>
+
+- Nothing needs a compiler: `pip` only adds `mido`. Install numpy with
+  `pkg`, never with pip. Without numpy only MIDI is exported.
+- ffmpeg reads MP3/M4A/Opus/FLAC. Optional and faster for FLAC/OGG/AIFF:
+  `pkg install libsndfile && pip install soundfile`.
+- The key is saved in `~/.config/psygen/api_key` (only you can read it).
+  `ANTHROPIC_API_KEY` in your shell wins over it.
+- Claude Code runs with all tools off (`claude -p --tools ""`), so it only
+  answers. A Termux build of it works too; if its command isn't `claude`,
+  set `claude_cli` in `~/.config/psygen/config.json`.
+- `claude_backend` in that config: `auto` (default), `api` or `claude-code`.
+- `open_flm_after_export: false` (or `--no-open-flm`) stops psygen from
+  opening FL Studio Mobile. FL Studio Mobile can't load a track into an open
+  project from outside, so pick the stems or MIDI from its browser. The
+  background run's log is `~/.cache/psygen/background.log`.
+- Desktop/development: `pip install -e ".[dev]"`.
+
+</details>
+
+## The terminal UI
+
+`psygen` (or `psygen ui`) opens a full-screen menu that works with the
+Termux keyboard and touch:
+
+```
+ psygen | New track
+Genre      < psytrance >
+BPM        auto
+Key        < auto >
+Scale      < auto >
+Length     auto (minutes)
+Idea       sunrise on the beach, twisted 303
+Composer   < Claude, high effort >
+Output     < MIDI + stems + preview >
+MP3        [ ] also an MP3 preview
+[ Generate and export ]
+
+[ Sample folders (1234 samples) ]
+[ API key: saved ]
+[ Earlier tracks (3) ]
+[ Quit ]
 ```
 
-Notes:
+- **Arrows** move (Termux shows arrow keys in its extra-keys row),
+  **left/right** change a choice, **enter** acts. You can also **tap** a
+  line to select it and tap it again to use it.
+- Text fields (BPM, Length, Idea) take typing directly while selected.
+  Leave BPM, Key, Scale and Length on `auto` and Claude decides.
+- **Generate and export** does the whole run: scans your samples first if
+  the library is still empty, lets Claude compose (or builds the offline
+  template), saves the track, and exports MIDI, stems and the preview. The
+  progress screen shows each step and, at the end, the folder the files
+  went to. **Esc** cancels after the current step (a Claude request that is
+  already running finishes in the background and is ignored).
+- **Sample folders** lists the scanned folders, adds a folder by path
+  (`~` works), removes one, and rescans, optionally letting Claude sort the
+  samples that names don't explain.
+- **API key** saves, tests (lists one model, which costs nothing) or
+  removes your key, and shows whether Claude Code is there as a backup.
+- **Earlier tracks** exports a composed track again, with the current
+  Output setting.
+- **Update psygen** fetches the newest version (same as `psygen update`).
+- **q** or **Quit** leaves. Esc never quits from the main screen.
 
-- psygen talks to the Claude API with Python's standard library and needs
-  no Rust or C compiler, so `pip install -e .` only pulls in `mido`. (It does
-  not use the `anthropic` SDK, whose Rust-built dependencies don't build on
-  Termux.)
-- **numpy**: install it with `pkg install python-numpy`, not pip. Building it
-  from source on a phone takes ages and often fails.
-- **soundfile** (optional) reads FLAC/OGG/AIFF quickly via libsndfile. Without
-  it, WAV files are read with the standard library and everything else goes
-  through `ffmpeg`.
-- **ffmpeg** (optional) decodes MP3/M4A/Opus and anything soundfile can't read.
-- Without numpy, `psygen` still works but sorts samples by name only.
+Your choices are remembered in `~/.config/psygen/config.json` for next
+time. The UI uses Python's built-in `curses`, so it needs nothing extra to
+install. If something unexpected breaks, the details are in
+`~/.cache/psygen/ui-error.log`.
 
-On a desktop (for development) a normal `pip install -e ".[dev]"` works.
+All of it also works as plain commands, described below, for scripts.
 
 ## Sample library
 
 Put your samples somewhere in shared storage. These folders are picked up
 automatically when they exist:
 
+- `~/storage/shared/FLM User Files` (FL Studio Mobile's official user
+  folder, with all its subfolders)
 - `~/storage/shared/Samples` (that is, `Internal storage/Samples`)
 - `~/storage/shared/Music/Samples`
 - `~/storage/shared/Download/Samples`
 - `~/storage/shared/FL Studio Mobile/My Samples`
 
-On Android 11 and newer, FL Studio Mobile's own folder under `Android/data`
-is usually not readable by Termux. Copy or move your samples to one of the
-folders above instead.
+If your `FLM User Files` sits under `Android/data/com.imageline.FLM/files/`
+instead, psygen tries that too, but on Android 11 and newer Termux usually
+can't read it. Copy or move your samples to one of the folders above then.
+If you configure your own folders (`psygen scan PATH --add` or in the UI),
+auto-detection stops, so add `FLM User Files` to that list too if you
+want it.
 
 ```sh
 psygen dirs                          # show which folders will be scanned
@@ -155,10 +223,13 @@ forest-gate/
   track.json                the track itself, to export again later
 ```
 
-Where it goes (`psygen dirs` shows it): `FL Studio Mobile/My Samples/psygen/`
-when Termux can reach FL Studio Mobile's folder, so the stems show up in its
-sample browser; otherwise `Music/psygen/` in shared storage, which you can
-open from FL Studio Mobile's file browser. Set `export_dir` in
+Where it goes (`psygen dirs` shows it): always
+`FLM User Files/My Samples/psygen/` in internal storage, created if needed,
+so every track lands in one fixed place that FL Studio Mobile's sample
+browser shows. (If your `FLM User Files` lives under
+`Android/data/com.imageline.FLM/files/` and Termux can write there, that
+one is used.) Without `termux-setup-storage` psygen can't reach shared
+storage and writes to `~/.local/share/psygen/exports` instead. Set `export_dir` in
 `~/.config/psygen/config.json` (or pass `--dest`) to use another folder.
 `export_sample_rate` (44100) and `export_bits` (16) are there too. psygen
 never scans its own export folders as samples.
@@ -187,6 +258,16 @@ the MIDI files are written.
 
 Stems are full length, so an 8-minute track is about 40 MB per stem at
 44.1 kHz / 16 bit. Use `--no-stems` if you only want the preview and MIDI.
+
+## Updating
+
+```sh
+psygen update          # then restart psygen
+psygen update --check  # only show what's new
+```
+
+It never overwrites your own edits in the install folder; it tells you
+what to do instead (`git stash`).
 
 ## Development
 

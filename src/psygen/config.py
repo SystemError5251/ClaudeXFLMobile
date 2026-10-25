@@ -28,6 +28,38 @@ def config_path() -> Path:
     return config_dir() / "config.json"
 
 
+def api_key_path() -> Path:
+    """Claude API key saved from the UI (readable by the owner only)."""
+    return config_dir() / "api_key"
+
+
+def load_api_key() -> str | None:
+    try:
+        key = api_key_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return key or None
+
+
+def save_api_key(key: str) -> Path:
+    path = api_key_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Create with owner-only permissions before the key is written.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(key.strip() + "\n")
+    os.chmod(path, 0o600)
+    return path
+
+
+def delete_api_key() -> bool:
+    try:
+        api_key_path().unlink()
+    except FileNotFoundError:
+        return False
+    return True
+
+
 def data_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share"
     return Path(base) / "psygen"
@@ -43,16 +75,26 @@ def index_path() -> Path:
 
 
 # Places where samples commonly live on Android. `~/storage/shared` only exists
-# after running `termux-setup-storage`. FL Studio Mobile keeps user samples in
-# "FL Studio Mobile/My Samples" on older Android versions; on Android 11+ its
-# app folder under Android/data is not readable by Termux.
+# after running `termux-setup-storage`. FL Studio Mobile's official user folder
+# is "FLM User Files" (samples, recordings, projects); older versions used
+# "FL Studio Mobile/My Samples". On Android 11+ anything under Android/data is
+# usually not readable by Termux, but it is tried anyway.
 SHARED_STORAGE_ROOTS = (
     Path.home() / "storage" / "shared",
     Path("/storage/emulated/0"),
     Path("/sdcard"),
 )
 
+# FL Studio Mobile's user folders, preferred first (also the export target).
+FLM_USER_DIRS = (
+    "FLM User Files",
+    "Android/data/com.imageline.FLM/files/FLM User Files",
+    "FL Studio Mobile",
+)
+
 SAMPLE_SUBDIRS = (
+    "FLM User Files",
+    "Android/data/com.imageline.FLM/files/FLM User Files",
     "Samples",
     "samples",
     "Music/Samples",
@@ -60,6 +102,25 @@ SAMPLE_SUBDIRS = (
     "FL Studio Mobile/My Samples",
     "Android/data/com.imageline.FLM/files/My Samples",
 )
+
+
+def storage_ready() -> bool:
+    """True when Termux can list shared storage (termux-setup-storage done)."""
+    for root in SHARED_STORAGE_ROOTS:
+        try:
+            next(os.scandir(root), None)
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def no_sample_dirs_hint() -> str:
+    if not storage_ready():
+        return ("Termux can't read your internal storage yet. Run termux-setup-storage, "
+                "allow access, restart Termux and try again.")
+    return ("No sample folders found. Put your samples in Internal storage/FLM User Files "
+            "or Internal storage/Samples, or add a folder under Sample folders.")
 
 
 def default_sample_dirs() -> list[Path]:
@@ -82,28 +143,39 @@ def default_sample_dirs() -> list[Path]:
 
 
 def flm_output_dir() -> Path | None:
-    """FL Studio Mobile's user folder if Termux can reach it."""
-    for root in SHARED_STORAGE_ROOTS:
-        candidate = root / "FL Studio Mobile"
-        if candidate.is_dir():
-            return candidate
+    """FL Studio Mobile's user folder ("FLM User Files") if Termux can write to it."""
+    for sub in FLM_USER_DIRS:
+        for root in SHARED_STORAGE_ROOTS:
+            candidate = root / sub
+            try:
+                if candidate.is_dir() and os.access(candidate, os.W_OK):
+                    return candidate
+            except OSError:
+                continue
     return None
 
 
 def default_export_dir() -> Path:
     """Where exports go unless ``export_dir`` is set.
 
-    FL Studio Mobile's own folder when Termux can reach it (``My Samples``
-    shows up in its sample browser), else ``Music/psygen`` in shared storage
-    (importable from FL Studio Mobile's file browser), else a local folder.
+    Always ``FLM User Files/My Samples/psygen``, so there is one fixed place
+    to pick tracks up in FL Studio Mobile's sample browser: an existing
+    ``FLM User Files`` folder Termux can write to, otherwise one created in
+    shared storage. Without shared storage (no ``termux-setup-storage``) a
+    local folder is used.
     """
-    flm = flm_output_dir()
-    if flm is not None:
-        return flm / "My Samples" / "psygen"
+    for sub in FLM_USER_DIRS[:2]:  # the "FLM User Files" locations
+        for root in SHARED_STORAGE_ROOTS:
+            candidate = root / sub
+            try:
+                if candidate.is_dir() and os.access(candidate, os.W_OK):
+                    return candidate / "My Samples" / "psygen"
+            except OSError:
+                continue
     for root in SHARED_STORAGE_ROOTS:
         try:
             if root.is_dir() and os.access(root, os.W_OK):
-                return root / "Music" / "psygen"
+                return root / "FLM User Files" / "My Samples" / "psygen"
         except OSError:
             continue
     return data_dir() / "exports"
@@ -114,10 +186,15 @@ class Config:
     sample_dirs: list[str] = field(default_factory=list)
     analyze_audio: bool = True
     claude_model: str = "claude-opus-5-5"
+    claude_backend: str = "auto"  # auto (API, then Claude Code), api, claude-code
+    claude_cli: str = "claude"  # the Claude Code command
     compose_effort: str = "high"
     export_dir: str = ""  # empty: default_export_dir()
     export_sample_rate: int = 44100
     export_bits: int = 16
+    ui: dict = field(default_factory=dict)  # last choices in the terminal UI
+    open_flm_after_export: bool = True  # Termux: bring FL Studio Mobile up when a track is ready
+    storage_setup_done: bool = False  # termux-setup-storage ran on the first start
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":

@@ -55,7 +55,7 @@ def test_ask_json_bad_answers(stop, text):
         ai.ask_json("sys", "hi", {}, client=client)
 
 
-def test_make_client_needs_a_key(monkeypatch):
+def test_make_client_needs_a_key(monkeypatch, isolated_home):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
     with pytest.raises(ai.ClaudeError, match="ANTHROPIC_API_KEY"):
